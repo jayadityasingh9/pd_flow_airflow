@@ -68,7 +68,7 @@ flowchart LR
 
 ```csh
 bash ~/pd_flow_airflow/bin/pdflow.sh doctor
-#   expect: "15 checks: 15 PASS, 0 WARN, 0 FAIL" -- every FAIL line says how to fix it
+#   expect: "17 checks: 17 PASS, 0 WARN, 0 FAIL" -- every FAIL line says how to fix it
 ```
 
 ---
@@ -145,6 +145,8 @@ If Airflow itself misbehaves (no Trigger button, nothing starts), also send the 
 | Symptom | Cause | What to do |
 |---|---|---|
 | UI has **no Trigger button**, or runs stay *queued* | the login host was frozen/overloaded; Airflow's scheduler or DAG reader stopped (DAG marked "stale") | `bash airflow/status.sh`; if anything is unhealthy: `bash airflow/stop.sh` then start again in tmux. Running FC jobs are **not** affected. |
+| Runs stay **queued** on a brand-new copy | Airflow creates a DAG *paused* in a new database | fixed: new DBs create it unpaused and `start.sh` unpauses it; `doctor` reports *"DAG raven_pd_flow not paused: FAIL"* with the fix if it ever happens |
+| `pdflow.sh` says *"…/airflow/venv/bin/python: No such file or directory"* | an old copy that ignored `VENV` from `local.env` | `git pull` (fixed) |
 | A step's log shows *"task stopped by Airflow … NOT killing the job"* | Airflow lost contact (host freeze/restart) | nothing: the step is retried automatically and re-attaches to the job (log: *REATTACHED* / *ADOPTED*) |
 | init_design log is **empty for 5-10 min** | fc_shell start-up / waiting for a license (queueing is on, up to 12 h) | wait; the task log says *"[waiting for license/start-up]"* |
 | compile FAILS with *"Rule S19 violation exists and hence exiting"* | the RM stops on DFT Rule S19 (debug, trf hit it) | trigger again: same Run tag, **Start from** `compile`, **Continue past DFT Rule S19** on |
