@@ -1,0 +1,120 @@
+ 
+                              Fusion Compiler (TM)
+
+               Version V-2023.12-SP5-3 for linux64 - Dec 17, 2024
+                           Base build date 11/18/2024
+
+                    Copyright (c) 1988 - 2024 Synopsys, Inc.
+   This software and the associated documentation are proprietary to Synopsys,
+ Inc. This software may only be used in accordance with the terms and conditions
+ of a written license agreement with Synopsys, Inc. All other use, reproduction,
+   or distribution of this software is strictly prohibited.  Licensed Products
+     communicate with Synopsys servers for the purpose of providing software
+    updates, detecting software piracy and verifying that customers are using
+    Licensed Products in conformity with the applicable License Key for such
+  Licensed Products. Synopsys will use information gathered in connection with
+    this process to deliver software updates and pursue software pirates and
+                                   infringers.
+
+ Inclusivity & Diversity - Visit SolvNetPlus to read the "Synopsys Statement on
+            Inclusivity and Diversity" (Refer to article 000036315 at
+                        https://solvnetplus.synopsys.com)
+
+fc_shell> source fc_shell> source /home/jsingh9.scratch/indus/pico_fc_flow/rm_fc/scripts/fc_run.tcl
+Error: extra positional option 'source' (CMD-012)
+Error: extra positional option '/home/jsingh9.scratch/indus/pico_fc_flow/rm_fc/scripts/fc_run.tcl' (CMD-012)
+fc_shell> Error: could not open script file "../scripts/variables.tcl" (CMD-015)
+Error: unknown command 'Error:' (CMD-005)
+fc_shell> Information: script '/home/jsingh9.scratch/indus/pico_fc_flow/rm_fc/scripts/fc_run.tcl'
+Error: unknown command 'Information:' (CMD-005)
+fc_shell> stopped at line 2 due to error. (CMD-081)
+Error: unknown command 'stopped' (CMD-005)
+fc_shell> Extended error info:
+Error: unknown command 'Extended' (CMD-005)
+fc_shell> 
+fc_shell> while executing
+Error: wrong # args: should be "while test command"
+        Use error_info for more info. (CMD-013)
+fc_shell> "source ../scripts/variables.tcl"
+Error: unknown command 'source ../scripts/variables.tcl' (CMD-005)
+fc_shell> (file "/home/jsingh9.scratch/indus/pico_fc_flow/rm_fc/scripts/fc_run.tcl" line 2)
+Error: unknown command '(file' (CMD-005)
+fc_shell> -- End Extended Error Info
+Error: unknown command '--' (CMD-005)
+fc_shell> source /home/jsingh9.scratch/indus/pico_fc_flow/rm_fc/scripts/fc_run.tcl
+Warning: DesignRule '' is missing the attribute 'minSpacingYParallelLengthThresholdTbl'. (22FDSOI_9M_2Mx_3Cx_2Bx_1Ix_1Ox_LB__eMRAM_116cpp_9t_ndm.tf line 13547) (TECH-026)
+Warning: DesignRule '' is missing the attribute 'minSpacingXParallelLengthThresholdTbl'. (22FDSOI_9M_2Mx_3Cx_2Bx_1Ix_1Ox_LB__eMRAM_116cpp_9t_ndm.tf line 13547) (TECH-026)
+Information: Loading technology file '/mips/proj/ravendrive/fromGF/AutoPro-150/LATEST/pdk/PlaceRoute/ICC2/Techfiles/9M_2Mx_3Cx_2Bx_1Ix_1Ox_LB__eMRAM/22FDSOI_9M_2Mx_3Cx_2Bx_1Ix_1Ox_LB__eMRAM_116cpp_9t_ndm.tf' (FILE-007)
+Information: By default, the HDL template library is 'WORK' (LBR-??).
+Running PRESTO HDLC
+Compiling source file /home/jsingh9.scratch/temp/picorv32/picorv32.v
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:285: A unnamed generate block with an LRM-defined name 'genblk1' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:285: A unnamed generate block with an LRM-defined name 'genblk1' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:272: A unnamed generate block with an LRM-defined name 'genblk1' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:305: A unnamed generate block with an LRM-defined name 'genblk2' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:305: A unnamed generate block with an LRM-defined name 'genblk2' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:1229: A unnamed generate block with an LRM-defined name 'genblk3' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:1229: A unnamed generate block with an LRM-defined name 'genblk3' is detected, which is incompatible with Verilog standard 2001 or 1995. (VER-944)
+Presto compilation completed successfully.
+Elapsed = 00:00:00.12, CPU = 00:00:00.04
+Warning:  /home/jsingh9.scratch/temp/picorv32/picorv32.v:166: signed to unsigned conversion occurs. (VER-318)
+Error: extra positional option 'source' (CMD-012)
+Error: extra positional option '/home/jsingh9.scratch/indus/pico_fc_flow/rm_fc/scripts/fc_run.tcl' (CMD-012)
+Error: unknown command 'Error:' (CMD-005)
+Error: unknown command 'Information:' (CMD-005)
+Error: unknown command 'stopped' (CMD-005)
+Error: unknown command 'Extended' (CMD-005)
+Error: wrong # args: should be "while test command"
+Error: unknown command 'source ../scripts/variables.tcl' (CMD-005)
+Error: unknown command '(file' (CMD-005)
+Error: unknown command '--' (CMD-005)
+Information: Timer using 16 threads
+Information: Time: 2026-07-30 02:10:13 / Session:  00:16:10 / Command:  00:00:00 / CPU:  00:00:00 / Memory: 2371 MB (FLW-8100)
+Information: Time: 2026-07-30 02:10:35 / Session:  00:16:33 / Command:  00:00:22 / CPU:  00:00:21 / Memory: 3387 MB (FLW-8100)
+Information: Time: 2026-07-30 02:10:35 / Session:  00:16:33 / Command:  00:00:22 / CPU:  00:00:21 / Memory: 3387 MB (FLW-8100)
+Information: Ending   compile_fusion / initial_map / Load Design (FLW-8001)
+Information: Time: 2026-07-30 02:10:55 / Session:  00:16:53 / Command:  00:00:42 / CPU:  00:00:41 / Memory: 3808 MB (FLW-8100)
+Information: Time: 2026-07-30 02:10:55 / Session:  00:16:53 / Command:  00:00:42 / CPU:  00:00:41 / Memory: 3808 MB (FLW-8100)
+Information: Ending   compile_fusion / initial_map / MV Cell Insertion (FLW-8001)
+Information: Time: 2026-07-30 02:10:55 / Session:  00:16:53 / Command:  00:00:42 / CPU:  00:00:41 / Memory: 3808 MB (FLW-8100)
+Information: Time: 2026-07-30 02:10:55 / Session:  00:16:53 / Command:  00:00:42 / CPU:  00:00:41 / Memory: 3808 MB (FLW-8100)
+Information: Time: 2026-07-30 02:10:55 / Session:  00:16:53 / Command:  00:00:42 / CPU:  00:00:41 / Memory: 3808 MB (FLW-8100)
+Information: Ending   compile_fusion / initial_map / Logic Simplification (1) / Constant and Equal Register Detection (FLW-8001)
+Information: Time: 2026-07-30 02:11:03 / Session:  00:17:01 / Command:  00:00:50 / CPU:  00:00:49 / Memory: 3855 MB (FLW-8100)
+Information: Time: 2026-07-30 02:11:03 / Session:  00:17:01 / Command:  00:00:50 / CPU:  00:00:49 / Memory: 3855 MB (FLW-8100)
+Information: Ending   compile_fusion / initial_map / Logic Simplification (1) / Register Merging (FLW-8001)
+Information: Time: 2026-07-30 02:11:03 / Session:  00:17:01 / Command:  00:00:50 / CPU:  00:00:49 / Memory: 3855 MB (FLW-8100)
+Information: Time: 2026-07-30 02:11:03 / Session:  00:17:01 / Command:  00:00:50 / CPU:  00:00:49 / Memory: 3855 MB (FLW-8100)
+Information: Ending   compile_fusion / initial_map / Logic Simplification (1) / Constant Propagation and Register Optimization (FLW-8001)
+Information: Time: 2026-07-30 02:11:17 / Session:  00:17:14 / Command:  00:01:04 / CPU:  00:01:03 / Memory: 4750 MB (FLW-8100)
+Information: Ending   compile_fusion / initial_map / Logic Simplification (1) (FLW-8001)
+Information: Routes in non-preferred voltage areas = 0 (ZRT-559)
+
+Updating the database ...
+Information: Extraction observers are detached as design net change threshold is reached.
+Information: Ending   'route_auto' (FLW-8001)
+Information: Time: 2026-07-30 03:04:35 / Session:  01:10:32 / Command:  00:40:17 / CPU:  01:06:45 / Memory: 7481 MB (FLW-8100)
+Information: Saving block 'picorv32.nlib:picorv32.design'
+****************************************
+Report : Reporting Mismatches
+Version: V-2023.12-SP5-3
+Date   : Thu Jul 30 03:04:37 2026
+****************************************
+
+==============================
+Library : picorv32.nlib
+==============================
+Mismatch Type                        Total Count   Repaired  Unrepaired
+--------------------------------------------------------------------------------
+layer_missing_prefer_direction       1             1         0
+Warning: Attribute 'wire_capacitance_max' does not exist on net VDD (ATTR-3)
+Warning: Attribute 'wire_capacitance_min' does not exist on net VDD (ATTR-3)
+Warning: Attribute 'wire_capacitance_max' does not exist on net VSS (ATTR-3)
+Warning: Attribute 'wire_capacitance_min' does not exist on net VSS (ATTR-3)
+>>> Non-interactive run -- skipping report summary.
+Maximum memory usage for this session: 7481.08 MB
+Maximum memory usage for this session including child processes: 7481.08 MB
+CPU usage for this session:   6885 seconds (  1.91 hours)
+Elapsed time for this session:   4248 seconds (  1.18 hours)
+Thank you for using Fusion Compiler.
+

@@ -1,0 +1,10 @@
+# generated / per-machine
+airflow/venv/
+airflow/home/
+airflow/*.log
+airflow/local.env
+config/local.yaml
+__pycache__/
+.pytest_cache/
+tests/smoke_*.log
+tests/_*/

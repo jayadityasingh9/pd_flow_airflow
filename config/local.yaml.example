@@ -1,0 +1,12 @@
+# Copy to config/local.yaml (git-ignored). Only the keys you change; everything else comes from
+# config/fixed.yaml. ${USER} / ${HOME} and ${other_key} are expanded.
+
+# Where your runs go (default /home/${USER}.scratch/raven_local_ws):
+#runs_root: /home/${USER}.scratch/raven_local_ws
+
+# The Perforce workspace the flow COPIES rm_fc_cad from (read-only). Default: jsingh9's workspace
+# (world-readable). Use your own to test your own RTL / scripts:
+#mips_home: /home/${USER}/Perforce/<your_workspace>
+
+# Limit the pd hosts offered in the trigger form:
+#fc_hosts: [mipspd81, mipspd84]

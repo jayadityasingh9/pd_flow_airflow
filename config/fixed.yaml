@@ -1,0 +1,163 @@
+# =====================================================================================
+# Raven PD flow -- FIXED (predefined) configuration.
+#
+# Everything that does NOT change from run to run lives here. Per-run values come from the
+# Airflow trigger form (see airflow/dags/raven_pd_flow_dag.py). `${key}` expands to another
+# top-level scalar in this file. A snapshot + sha256 of this file is stored in every run.json.
+# =====================================================================================
+
+# --- Sources (read-only: the flow copies, never modifies) ------------------------------
+mips_home: /home/jsingh9/Perforce/jsingh9_raven_ws2      # read-only source; testers may point to their own workspace in config/local.yaml
+rm_fc_cad_src: ${mips_home}/rm_fc_cad
+build_configs_dir: ${mips_home}/raven/src/config      # the 41 valid -c/--configName values
+
+# --- Where runs go --------------------------------------------------------------------
+# One dir per run: <runs_root>/<run_tag>/{run.json, scripts/, status/, logs/, qor/, rm_fc_cad/}
+runs_root: /home/${USER}.scratch/raven_local_ws         # per user (override in config/local.yaml)
+
+# --- Hosts the tool steps may run on (chosen per run in the form) ----------------------
+fc_hosts: [mipspd81, mipspd82, mipspd83, mipspd84, mipspd85]
+ssh_opts: [-o, BatchMode=yes, -o, ConnectTimeout=15, -o, ServerAliveInterval=30]
+
+# --- Tool environment --------------------------------------------------------------------
+module_init: /mips/tools/freeware/Modules/latest/tcl/init/tcsh
+module_use: [/mips/tools/freeware/modulefiles, /mips/proj/tools/modulefiles]
+fc_module: fc/2022.12-SP6                  # loads licserver/3.0 -> SNPSLMD_LICENSE_FILE
+fc_shell_prefix: /mips/tools/synopsys/FusionCompile/2022.12-SP6/   # the step refuses any other fc_shell
+license_env:                               # set explicitly (the Makefile's `export` lines are no-ops)
+  SNPSLMD_QUEUE: "true"
+  SNPS_MAX_WAITTIME: "43200"               # wait up to 12 h for a free license
+  SNPS_MAX_QUEUETIME: "43200"
+# Build step only. It switches in its own tools (vcs/X-2025.06-1, python3/3.12.11, and also
+# fc/X-2025.06-SP2) -- which is why FC steps never source it.
+raven_env: ${mips_home}/raven/source_env.csh
+build_env_extra:                           # not set by source_env.csh, but build.py needs them
+  IMGSITE: SC
+# The clean environment every tool step starts from (env -i); nothing else leaks in.
+clean_env_path: /usr/local/bin:/usr/bin:/bin
+
+# --- RTL build (pyBuildSim) -------------------------------------------------------------
+build_py: ${mips_home}/sys_base/tools/pyBuildSim/build.py
+build_project: ravenRTL
+build_target: Synthesis
+build_tech: gf_22fdxp_9t_autopro150_9m_emram_stack
+build_extra_f:
+  - /mips/proj/ravendrive/pd/libs/std_cells/globalfoundaries22nhsp/LATEST/hdl/lvt/1.00a/verilog/3.0/gf22napllogl20hdl116a.v
+  - /mips/proj/ravendrive/pd/libs/std_cells/globalfoundaries22nhsp/LATEST/hdl/lvt/1.00a/verilog/std_primitives.v
+
+# --- Fusion Compiler RM ------------------------------------------------------------------
+tech_dir: GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack
+
+# --- The 4 modules ---------------------------------------------------------------------
+modules:
+  corvi_module:
+    design_name: corvi_module
+    top_file: raven/src/main/corvi_module/corvi_module.sv          # relative to mips_home
+    default_build_config: 2Core_4VC_32K
+    default_clk_period: 1.25
+    clocks: "PI_CLK (Clk), vc_Clk"
+    filelist_override: corvi_syn_rtl.tcl                           # in ${mips_home}/../filelists/
+    size: L
+  cic_module:
+    design_name: cm3_cic
+    top_file: cm3/src/main/cm3_cic/cm3_cic.v
+    default_build_config: 2Core_4VC_32K_rvn_drive
+    default_clk_period: 1.25
+    clocks: "cm_clk (Clk), vc_Clk"
+    filelist_override: cic_syn_rtl.tcl
+    size: M
+  debug_module:
+    design_name: rvn_dbu_top_wrapper
+    top_file: cm3/src/main/cm3_dbu/rvn_dbu_top_wrapper.sv
+    default_build_config: 2Core_4VC_32K_rvn_drive
+    default_clk_period: 2
+    clocks: "clk (Clk), jtag_tck, ci_dbu_tp_pclk, vc_Clk"
+    filelist_override: dm_syn_rtl.tcl
+    size: S
+  trf_module:
+    design_name: rvn_mips_l2trf_top
+    top_file: tru/src/main/rvn_mips_l2trf_top.v
+    default_build_config: 2Core_4VC_32K_rvn_drive
+    default_clk_period: 1.25
+    clocks: "clk (Clk), core_clk*, vc_Clk"
+    filelist_override: l2trf_syn_rtl.tcl
+    size: S
+
+# --- Patches applied to the RUN COPY only (each must match exactly once) ------------------
+# {tech_dir} is filled from above; {clk} / {cores} from the resolved run inputs.
+patches:
+  - id: clk_period
+    file: block_files/{tech_dir}/design_setup.tcl
+    pattern: '^set Clk_period[ \t]+[0-9.]+[ \t]*$'
+    replace: 'set Clk_period {clk}'
+  - id: max_cores_design_setup
+    file: block_files/{tech_dir}/design_setup.tcl
+    pattern: '^([ \t]*)set_host_options -max_cores [0-9]+[ \t]*$'
+    replace: '\g<1>set_host_options -max_cores {cores}'
+  - id: max_cores_fc_setup                 # fc_setup.tcl:18 runs AFTER design_setup -> the effective one
+    file: scripts_block/rm_setup/fc_setup.tcl
+    pattern: '^set_host_options -max_cores [0-9]+[ \t]*$'
+    replace: 'set_host_options -max_cores {cores}'
+
+# --- On/off patches driven by a trigger-form boolean (run copy only; reversible) ---------
+# compile.tcl EXITS (before its reports + marker) when DFT DRC finds Rule S19 (nonscan cell
+# disturb). With continue_past_s19 ON, the run copy only warns and compile goes on.
+toggles:
+  - id: continue_past_s19
+    param: continue_past_s19
+    file: scripts_block/rm_fc_scripts/compile.tcl
+    off_pattern: '^([ \t]*)echo "Rule S19 violation exists and hence exiting"[ \t]*\n([ \t]*dft_drc [^\n]*\n)([ \t]*)exit[ \t]*$'
+    on_replace: '\g<1>echo "pdflow: Rule S19 violation exists -- CONTINUING (continue_past_s19 is ON)"\n\g<2>\g<3>#pdflow-removed: exit'
+    on_pattern: '^([ \t]*)echo "pdflow: Rule S19 violation exists -- CONTINUING \(continue_past_s19 is ON\)"[ \t]*\n([ \t]*dft_drc [^\n]*\n)([ \t]*)#pdflow-removed: exit[ \t]*$'
+    off_replace: '\g<1>echo "Rule S19 violation exists and hence exiting"\n\g<2>\g<3>exit'
+
+# --- RTL read fixes (applied to the RUN's build output, never to Perforce) ----------------
+# Applied right before init_design to <run>/rm_fc_cad/vbuild/<cfg>/vbuild/include/<file> -- the
+# copy FC reads (it is on INC_DIRS; the Perforce include dir is not). Each pattern must match
+# once (applied) or zero times (already applied / fixed upstream); 2+ matches fail the step.
+rtl_fixes:
+  - id: rvn_exctype_size_cast
+    file: raven/src/main/include/rvn_csr_defs.vh
+    pattern: '^(`define RVN_EXCTYPE_SIZE[ \t]+)\$unsigned\((.*)\)[ \t]*$'
+    replace: '\g<1>(\g<2>)'
+    done_pattern: '^`define RVN_EXCTYPE_SIZE[ \t]+\(\('
+    why: >-
+      FC (Presto) cannot parse a $unsigned(...) call as a cast width: `RVN_EXCTYPE_SIZE'(x) in
+      sam_exu_gru_exc_decdr.v gives VER-294 and the parser then fails rvn_lsu.sv (VER-260), so
+      corvi elaborates with 57 unbound modules. Same value, plain parentheses. VCS accepts both.
+      Report to the RTL owners so it can be fixed in Perforce.
+
+# --- Limits per size class (S/M/L) ---------------------------------------------------------
+# Soft timeouts (hours): the step is killed after this. Placeholders until real runtimes are
+# known -- then set to ~3x the measured value.
+timeouts_h:
+  S: {build: 1, init_design: 2, compile: 4,  clock_opt_cts: 2,  clock_opt_opto: 2,  route_auto: 4,  route_opt: 4}
+  M: {build: 1, init_design: 4, compile: 12, clock_opt_cts: 8,  clock_opt_opto: 8,  route_auto: 12, route_opt: 12}
+  L: {build: 1, init_design: 6, compile: 24, clock_opt_cts: 16, clock_opt_opto: 16, route_auto: 24, route_opt: 24}
+min_free_disk_gb: {S: 10, M: 50, L: 150}   # on runs_root
+min_free_mem_gb:  {S: 16, M: 64, L: 200}   # MemAvailable on the chosen host
+
+# --- Gates -----------------------------------------------------------------------------
+hitl_response_timeout_h: 72                # no answer in 72 h -> gate fails -> run fails
+
+# --- FC log scanning ----------------------------------------------------------------------
+# Any match FAILS the step (even when fc_shell exits 0 and the marker is written).
+fatal_patterns:
+  - '^No clocks created, Exiting'
+  - '^Rule S19 violation exists and hence exiting'      # anchored: the Tcl source is echoed too
+  - '^RM-error: .*(FC_RTL_READ_INPUT_SCRIPT|Unknown RTL_READ_FORMAT|RTL_SOURCE_FORMAT)'
+  - '^Error: .*\((ELAB|VER|LNK|NDM)-\d+\)'
+  - '^Error: Current design is not defined'
+  - '^Fatal:'
+  - 'Segmentation fault'
+  - 'core dumped'
+  - '(?i)unable to check ?out .*license'
+  - '(?i)^Error: .*license'
+# Error IDs are counted from FC's own `print_message_info -ids * -summary` table; ELAB/VER/LNK/NDM
+# errors always FAIL. Other Error IDs: WARN (listed in the gate) -- a good run still has some
+# (e.g. debug_module init_design: CMD-015 DES-012 DPCHK-017 PGR-049 SEL-005).
+unknown_error_policy: warn                 # warn | fail
+# With unknown_error_policy: fail, IDs listed here per step are accepted (seed from a good run).
+allowed_error_ids: {}
+# route_opt: open nets always FAIL; DRCs FAIL only above this limit (null = never, just WARN).
+max_route_opt_drcs: null

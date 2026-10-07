@@ -1,0 +1,101 @@
+****************************************
+Report : qor
+Design : picorv32
+Version: V-2023.12-SP5-3
+Date   : Thu Jul 30 03:04:37 2026
+****************************************
+Information: The stitching and editing of coupling caps is turned OFF for design 'picorv32.nlib:picorv32.design'. (TIM-125)
+Information: Design picorv32 has 5340 nets, 0 global routed, 5337 detail routed. (NEX-024)
+Information: The RC mode used is DR for design 'picorv32'. (NEX-022)
+---extraction options---
+Corner: CWT_corn
+ late_cap_scale                : 1
+ late_res_scale                : 1
+ early_cap_scale               : 1
+ early_res_scale               : 1
+Global options:
+ reference_direction       : use_from_tluplus
+ real_metalfill_extraction : none
+ virtual_shield_extraction : true
+---app options---
+ host.max_cores                   : 16
+ extract.connect_open           : true
+ extract.enable_coupling_cap    : false
+Extracting design: picorv32 
+Information: coupling capacitance is lumped to ground. (NEX-030)
+Information: 5338 nets are successfully extracted. (NEX-028)
+Warning: Advanced receiver model has not been enabled for detailed routed design. (TIM-204)
+Information: Update timing completed net estimation for all the timing graph nets (TIM-111)
+Information: Net estimation statistics: timing graph nets = 5338, routed nets = 5338, across physical hierarchy nets = 0, parasitics cached nets = 5338, delay annotated nets = 0, parasitics annotated nets = 0, multi-voltage nets = 0. (TIM-112)
+
+
+Scenario           'func::CWT_corn'
+Timing Path Group  'clk'
+----------------------------------------
+Levels of Logic:                      8
+Critical Path Length:            395.64
+Critical Path Slack:             -18.70
+Critical Path Clk Period:        400.00
+Total Negative Slack:          -1097.71
+No. of Violating Paths:             180
+Worst Hold Violation:              0.00
+Total Hold Violation:              0.00
+No. of Hold Violations:               0
+----------------------------------------
+
+
+Cell Count
+----------------------------------------
+Hierarchical Cell Count:              0
+Hierarchical Port Count:              0
+Leaf Cell Count:                   5303
+Buf/Inv Cell Count:                 311
+Buf Cell Count:                      25
+Inv Cell Count:                     286
+Combinational Cell Count:          3611
+   Single-bit Isolation Cell Count:                        0
+   Multi-bit Isolation Cell Count:                         0
+   Isolation Cell Banking Ratio:                           0.00%
+   Single-bit Level Shifter Cell Count:                    0
+   Multi-bit Level Shifter Cell Count:                     0
+   Level Shifter Cell Banking Ratio:                       0.00%
+   Single-bit ELS Cell Count:                              0
+   Multi-bit ELS Cell Count:                               0
+   ELS Cell Banking Ratio:                                 0.00%
+Sequential Cell Count:             1692
+   Integrated Clock-Gating Cell Count:                     47
+   Sequential Macro Cell Count:                            0
+   Single-bit Sequential Cell Count:                       1645
+   Multi-bit Sequential Cell Count:                        0
+   Sequential Cell Banking Ratio:                          0.00%
+   BitsPerflop:                                            1.00
+Macro Count:                          0
+----------------------------------------
+
+
+Area
+----------------------------------------
+Combinational Area:             1731.20
+Noncombinational Area:          2748.56
+Buf/Inv Area:                     84.36
+Total Buffer Area:                12.19
+Total Inverter Area:              72.16
+Macro/Black Box Area:              0.00
+Net Area:                             0
+Net XLength:                   36748.84
+Net YLength:                   39251.81
+----------------------------------------
+Cell Area (netlist):                           4479.76
+Cell Area (netlist and physical only):         4479.76
+Net Length:                    76000.65
+
+
+Design Rules
+----------------------------------------
+Total Number of Nets:              5340
+Nets with Violations:                 0
+Max Trans Violations:                 0
+Max Cap Violations:                   0
+----------------------------------------
+
+1
