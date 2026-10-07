@@ -5,4 +5,4 @@
 #   doctor | report <run_tag>
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/airflow/env.sh"
-exec "$ROOT/airflow/venv/bin/python" -m pdflow.cli "$@"
+exec "$VENV/bin/python" -m pdflow.cli "$@"
