@@ -67,7 +67,7 @@ flowchart LR
 **One command checks all of it:**
 
 ```csh
-bash ~/pd_flow_airflow/bin/pdflow.sh doctor
+bash /home/$USER.scratch/pd_flow_airflow/bin/pdflow.sh doctor
 #   expect: "17 checks: 17 PASS, 0 WARN, 0 FAIL" -- every FAIL line says how to fix it
 ```
 
