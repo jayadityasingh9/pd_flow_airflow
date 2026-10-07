@@ -40,7 +40,9 @@ def _hdr(ctx: dict, what: str) -> str:
 def render_env_fc(ctx: dict, fixed: dict) -> str:
     lines = [_hdr(ctx, "Environment for the Fusion Compiler steps (sourced by 20..70_*.csh)."),
              "unsetenv DISPLAY            # report_qor.tcl calls gui_start when DISPLAY is set",
-             f"source {fixed['module_init']}",
+             "# process limits (config fc_limits): large designs need far more than the 8 MB default stack"]
+    lines += [f"limit {k} {v}" for k, v in (fixed.get("fc_limits") or {}).items()]
+    lines += [f"source {fixed['module_init']}",
              "module purge                # a manual re-run must not inherit another fc (source_env loads X-2025.06)"]
     lines += [f"module use {d}" for d in fixed["module_use"]]
     lines += [f"module load {fixed['fc_module']}",
@@ -157,6 +159,7 @@ foreach f ( "{fixed['module_init']}" "$RUN/scripts/env_fc.csh" )
     endif
 end
 source "$RUN/scripts/env_fc.csh"
+echo "pdflow: limits: `limit stacksize` / `limit descriptors` / `limit memoryuse`"
 set fcbin = `which fc_shell`
 if ( ! -x "$fcbin" ) then
     echo "pdflow: ERROR fc_shell not on PATH after 'module load {fixed['fc_module']}'"

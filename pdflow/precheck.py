@@ -129,9 +129,18 @@ def run_precheck(ctx: dict, fixed: dict, log=print, lock_owner_finished=None) ->
         if isinstance(hp.get("load1"), float) and isinstance(hp.get("nproc"), int) and hp["load1"] > 0.75 * hp["nproc"]:
             warn.append(f"{ctx['fc_host']} is busy (load {hp['load1']} on {hp['nproc']} cores)")
         mem_need = fixed["min_free_mem_gb"][ctx["size"]]
+        ok_hosts = sorted((h for h, d in probes.items() if "error" not in d and isinstance(d.get("mem_avail_gb"), int)
+                           and d["mem_avail_gb"] >= mem_need and isinstance(d.get("nproc"), int)
+                           and d["nproc"] >= ctx["max_cores"]),
+                          key=lambda h: (probes[h].get("load1", 99) / max(1, probes[h]["nproc"]), -probes[h]["mem_avail_gb"]))
         if isinstance(hp.get("mem_avail_gb"), int) and hp["mem_avail_gb"] < mem_need:
-            warn.append(f"{ctx['fc_host']} has {hp['mem_avail_gb']} GB RAM available; {ctx['module']} "
-                        f"({ctx['size']}) wants >= {mem_need} GB")
+            # corvi compile crashed (SIGSEGV) on a host short of RAM with swap full: refuse up front
+            fatal.append(f"{ctx['fc_host']} has only {hp['mem_avail_gb']} GB RAM available; {ctx['module']} "
+                         f"({ctx['size']}) needs >= {mem_need} GB (corvi compile reached 81 GB and was still growing)."
+                         + (f" Pick {ok_hosts[0]} ({probes[ok_hosts[0]]['mem_avail_gb']} GB free, load "
+                            f"{probes[ok_hosts[0]].get('load1')}/{probes[ok_hosts[0]]['nproc']})" if ok_hosts else ""))
+        if hp.get("swap_total_gb") and hp.get("swap_free_gb") == 0:
+            warn.append(f"{ctx['fc_host']}: swap is completely used -- the host is under memory pressure")
         fe = remote.fc_env_probe(fixed, ctx["fc_host"])
         if "error" in fe:
             fatal.append(f"FC environment probe on {ctx['fc_host']} failed: {fe['error']}")

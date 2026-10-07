@@ -102,6 +102,8 @@ echo "nproc=$(nproc)"
 echo "load1=$(cut -d' ' -f1 /proc/loadavg)"
 echo "mem_avail_gb=$(awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo)"
 echo "users=$(who | wc -l)"
+echo "swap_free_gb=$(awk '/SwapFree/{printf "%d", $2/1048576}' /proc/meminfo)"
+echo "swap_total_gb=$(awk '/SwapTotal/{printf "%d", $2/1048576}' /proc/meminfo)"
 """
 
 
@@ -116,7 +118,7 @@ def host_probe(fixed: dict, host: str) -> dict:
         if "=" in line:
             k, v = line.split("=", 1)
             d[k] = v.strip()
-    for k in ("nproc", "mem_avail_gb", "users"):
+    for k in ("nproc", "mem_avail_gb", "users", "swap_free_gb", "swap_total_gb"):
         try:
             d[k] = int(d[k])
         except (KeyError, ValueError):

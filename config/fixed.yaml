@@ -24,6 +24,12 @@ module_init: /mips/tools/freeware/Modules/latest/tcl/init/tcsh
 module_use: [/mips/tools/freeware/modulefiles, /mips/proj/tools/modulefiles]
 fc_module: fc/2022.12-SP6                  # loads licserver/3.0 -> SNPSLMD_LICENSE_FILE
 fc_shell_prefix: /mips/tools/synopsys/FusionCompile/2022.12-SP6/   # the step refuses any other fc_shell
+# csh `limit` settings for every FC step. The pd hosts' default soft stack is 8 MB (hard: unlimited);
+# corvi compile_fusion segfaulted (rc 139) in initial_map with it -- Synopsys recommends an
+# unlimited stack for large designs. descriptors: soft 1024 -> 65536 (hard 262144).
+fc_limits:
+  stacksize: unlimited
+  descriptors: "65536"
 license_env:                               # set explicitly (the Makefile's `export` lines are no-ops)
   SNPSLMD_QUEUE: "true"
   SNPS_MAX_WAITTIME: "43200"               # wait up to 12 h for a free license

@@ -20,7 +20,12 @@ from .qor import parse_report_qor
 
 BUILD_RC_HINT = {1: "VCS/yaml/traceback", 2: "invalid config or arguments", 3: "filelist/tech/PRPL step",
                  4: "setup step", 5: "Config.pm generation", 94: "build.py missing", 95: "run copy missing"}
-FC_RC_HINT = {95: "run copy missing", 96: "fc_shell not found after module load"}
+FC_RC_HINT = {95: "run copy missing", 96: "fc_shell not found after module load", 97: "env script unreadable",
+              134: "fc_shell aborted (SIGABRT)",
+              137: "fc_shell was KILLED (SIGKILL): out-of-memory killer or kill -9 -- pick a host with more free RAM",
+              139: "fc_shell CRASHED (SIGSEGV, segmentation fault): check free RAM/swap on the host and the stack "
+                   "limit (fc_limits); re-run on a quieter host",
+              143: "fc_shell was terminated (SIGTERM): stopped by a user / Airflow"}
 
 
 @dataclass

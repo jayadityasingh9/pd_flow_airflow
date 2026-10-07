@@ -737,3 +737,13 @@ def test_report_bundle(fixed, tmp_path, monkeypatch):
     for want in ("summary.md", "run.json", "logs/build.wrapper.log", "doctor.txt", "environment.txt",
                  "airflow_logs/R1/task_id=build_rtl/attempt=1.log"):
         assert f"{tag}/{want}" in names, want
+
+
+def test_env_fc_raises_limits_and_rc_hints(fixed):
+    c = ctx_for(fixed)
+    env = scripts.render_env_fc(c, fixed)
+    assert "limit stacksize unlimited" in env and "limit descriptors 65536" in env
+    assert env.index("limit stacksize") < env.index("module load")
+    make_fc_step(c, "compile", "Segmentation fault      (core dumped)\n")
+    v = checks.check_fc_step(c, fixed, "compile", dict(RES_OK, rc=139))
+    assert any("SIGSEGV" in f for f in v.fatal)
