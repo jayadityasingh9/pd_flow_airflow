@@ -34,6 +34,8 @@ export AIRFLOW_BIN="$VENV/bin/airflow"
 export AIRFLOW_HOME="$HERE/home"
 export AIRFLOW__CORE__DAGS_FOLDER="$HERE/dags"
 export AIRFLOW__CORE__LOAD_EXAMPLES="False"
+# A fresh DB would create the DAG PAUSED: triggered runs then sit "queued" forever.
+export AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION="False"
 export AIRFLOW__CORE__PARALLELISM="8"
 # DAG parsing on a loaded host: normal parse is ~1.5 s, but frozen login servers took 50 s and hit
 # the 50 s processor timeout -> DAG marked stale -> no Trigger button. Give it room, and do not

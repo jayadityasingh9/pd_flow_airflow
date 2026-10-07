@@ -22,6 +22,14 @@ fi
 
 rm -f "$AIRFLOW_HOME/pdflow_shutdown"     # written by stop.sh; see PdStepOperator.on_kill
 
+# Unpause raven_pd_flow once the DAG processor has registered it (a paused DAG queues runs forever).
+( for i in $(seq 1 30); do
+    sleep 20
+    if "$AIRFLOW_BIN" dags unpause raven_pd_flow >/dev/null 2>&1; then
+      echo "start.sh: raven_pd_flow is unpaused"; break
+    fi
+  done ) &
+
 # standalone spawns its children by invoking the bare command `airflow`: venv/bin must be on PATH.
 export PATH="$VENV/bin:$PATH"
 

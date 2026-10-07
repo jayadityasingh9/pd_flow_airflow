@@ -79,6 +79,24 @@ def run_doctor(fixed: dict) -> Doctor:
         d.add("warn", f"Airflow running on port {port}", "not running",
               "tmux new -s pdflow 'bash airflow/start.sh'")
 
+    # --- the DAG itself: registered, not paused, not stale (read straight from the local DB)
+    dbf = db / "airflow.db"
+    if dbf.is_file():
+        try:
+            import sqlite3
+            c = sqlite3.connect(f"file:{dbf}?mode=ro", uri=True, timeout=5)
+            row = c.execute("select is_paused, is_stale from dag where dag_id='raven_pd_flow'").fetchone()
+            c.close()
+            if row is None:
+                d.add("warn", "DAG raven_pd_flow", "not registered yet", "start Airflow and wait ~1 min")
+            else:
+                d.add(not row[0], "DAG raven_pd_flow not paused", "paused" if row[0] else "active",
+                      "bash airflow/af.sh dags unpause raven_pd_flow   (a paused DAG queues runs forever)")
+                d.add(not row[1] or "warn", "DAG raven_pd_flow not stale", "stale" if row[1] else "fresh",
+                      "the DAG reader stalled (busy host): restart Airflow")
+        except Exception as e:
+            d.add("warn", "DAG raven_pd_flow", f"could not read the DB: {e}")
+
     # --- sources + run folder
     mh = Path(fixed["mips_home"])
     d.add(mh.is_dir(), "MIPS_HOME (Perforce workspace)", str(mh), "set mips_home in config/local.yaml")
