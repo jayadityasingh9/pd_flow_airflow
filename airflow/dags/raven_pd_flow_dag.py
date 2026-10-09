@@ -43,12 +43,15 @@ MODS = FIXED["modules"]
 STEP_HELP = "build, init_design, compile, clock_opt_cts, clock_opt_opto, route_auto, route_opt"
 
 
-def _hard_timeout(step: str) -> timedelta:
-    """Airflow's own last-resort limit = largest soft timeout for this step + the license-queue
-    allowance (SNPS_MAX_WAITTIME) + 2 h. The real limit is the soft one (per size class, ACTIVE
-    time only), enforced by the runner, which also kills the remote job."""
+def _hard_timeout(step: str):
+    """Airflow's own last-resort limit = the largest max_runtime_h + license allowance + stall
+    timeout + 2 h (None = no limit). The real limits (stall / max runtime, ACTIVE time only) are
+    enforced by the runner, which also stops the remote job."""
+    caps = [v for v in (FIXED.get("max_runtime_h") or {}).values() if v]
+    if not caps:
+        return None
     lic_h = float(FIXED.get("license_env", {}).get("SNPS_MAX_WAITTIME", 0) or 0) / 3600 if step != "build" else 0
-    return timedelta(hours=max(float(t[step]) for t in FIXED["timeouts_h"].values()) + lic_h + 2)
+    return timedelta(hours=max(caps) + lic_h + float(FIXED.get("stall_timeout_h") or 0) + 2)
 
 
 PARAMS = {

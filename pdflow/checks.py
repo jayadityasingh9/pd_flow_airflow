@@ -60,7 +60,8 @@ def _fresh(p: Path, ref: float | None, slack: float = 5.0) -> bool:
 
 def _outcome_checks(v: Verdict, res: dict, hints: dict) -> None:
     if res["outcome"] == "timeout":
-        v.fail(f"killed after the soft timeout ({res['elapsed_s'] / 3600:.1f} h)")
+        v.fail(f"stopped by the flow after {res['elapsed_s'] / 3600:.1f} h: no new log output for the stall "
+               f"timeout, or the max runtime was reached (config: stall_timeout_h / max_runtime_h) -- see the task log")
     elif res["outcome"] == "lost":
         v.fail("the job disappeared without writing an exit code (killed, crashed or host reboot)")
     elif res["rc"] != 0:

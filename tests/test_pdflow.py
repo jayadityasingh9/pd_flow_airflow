@@ -47,8 +47,8 @@ def test_fixed_loads_and_expands():
     assert f["build_py"].startswith(f["mips_home"])
     assert set(f["modules"]) == set(MODULES)
     for m in f["modules"].values():
-        assert m["size"] in f["timeouts_h"]
-        assert set(f["timeouts_h"][m["size"]]) == set(STEPS)
+        assert m["size"] in f["max_runtime_h"] and f["min_free_mem_gb"][m["size"]]
+    assert f["stall_timeout_h"] >= 1 and f["max_runtime_h"]["L"] >= 100       # corvi compile > 24 h is normal
     assert STEPS[0] == "build" and STEPS[-1] == "route_opt"
     assert set(MARKERS_AFTER) == set(FC_STEPS)
 
@@ -747,3 +747,49 @@ def test_env_fc_raises_limits_and_rc_hints(fixed):
     make_fc_step(c, "compile", "Segmentation fault      (core dumped)\n")
     v = checks.check_fc_step(c, fixed, "compile", dict(RES_OK, rc=139))
     assert any("SIGSEGV" in f for f in v.fatal)
+
+
+
+def _fake_clock(monkeypatch, c, grow_until_s, finish_after_s, step="compile"):
+    """Job whose log grows until grow_until_s (then goes silent) and writes rc at finish_after_s."""
+    clock = {"t": 1000.0}
+    log = Path(c["module_dir"]) / "rm_fc" / "logs" / f"{step}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("source -echo fc_setup.tcl\n")
+    monkeypatch.setattr(runner.time, "time", lambda: clock["t"])
+
+    def tick(_):
+        clock["t"] += 600
+        el = clock["t"] - 1000
+        if el <= grow_until_s:
+            with open(log, "a") as f:
+                f.write("Still running\n")
+        if el >= finish_after_s:
+            (Path(c["run_dir"]) / "status" / f"{step}.rc").write_text("0\n")
+    monkeypatch.setattr(runner.time, "sleep", tick)
+    return clock
+
+
+def test_long_but_active_job_is_not_stopped(monkeypatch, fixed):
+    """corvi compile ran > 24 h while printing 'Still running': it must NOT be killed."""
+    c = mk_run(fixed)
+    fake = FakeRemote(c["run_dir"], "compile", rc=None, alive_seq=[True] * 1000)
+    setup_runner(monkeypatch, fixed, fake)
+    _fake_clock(monkeypatch, c, grow_until_s=60 * 3600, finish_after_s=60 * 3600)
+    killed = []
+    monkeypatch.setattr(runner, "kill_step", lambda *a, **k: killed.append(1))
+    r = runner.run_or_reattach(fixed, c, "compile", "mipspd84", 240 * 3600, "a1", log=lambda m: None,
+                               poll_s=0, alive_every_s=1e9, stall_timeout_s=6 * 3600, license_wait_s=0)
+    assert r.outcome == "done" and not killed
+
+
+def test_silent_job_is_stopped_by_stall_timeout(monkeypatch, fixed):
+    c = mk_run(fixed)
+    fake = FakeRemote(c["run_dir"], "compile", rc=None, alive_seq=[True] * 1000)
+    setup_runner(monkeypatch, fixed, fake)
+    _fake_clock(monkeypatch, c, grow_until_s=2 * 3600, finish_after_s=1e9)
+    msgs, killed = [], []
+    monkeypatch.setattr(runner, "kill_step", lambda *a, **k: killed.append(1))
+    r = runner.run_or_reattach(fixed, c, "compile", "mipspd84", None, "a1", log=msgs.append,
+                               poll_s=0, alive_every_s=1e9, stall_timeout_s=6 * 3600, license_wait_s=0)
+    assert r.outcome == "timeout" and killed and any("no new output" in m for m in msgs)

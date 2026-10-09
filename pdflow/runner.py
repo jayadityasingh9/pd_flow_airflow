@@ -173,9 +173,12 @@ def kill_step(fixed: dict, run_dir, step: str, grace_s: int = 60, log=print) -> 
     return "KILLED" in out
 
 
-def run_or_reattach(fixed: dict, ctx: dict, step: str, host: str, soft_timeout_s: float, attempt: str,
+def run_or_reattach(fixed: dict, ctx: dict, step: str, host: str, soft_timeout_s: float | None, attempt: str,
                     log=print, poll_s: float = 10, alive_every_s: float = 120, heartbeat_s: float = 300,
-                    start_wait_s: float = 180, license_wait_s: float | None = None) -> RunResult:
+                    start_wait_s: float = 180, license_wait_s: float | None = None,
+                    stall_timeout_s: float | None = None) -> RunResult:
+    """soft_timeout_s = max ACTIVE runtime (None = no cap); stall_timeout_s = stop only if the tool
+    log has not grown for this long (None = off). License queueing counts towards neither."""
     run_dir = ctx["run_dir"]
     sf = status_files(run_dir, step)
     script = script_path(ctx, step)
@@ -234,7 +237,8 @@ def run_or_reattach(fixed: dict, ctx: dict, step: str, host: str, soft_timeout_s
     active_since = None if is_fc else t_start
     tails = [Tailer(tool_log(ctx, step), start_epoch),
              Tailer(Path(run_dir) / "logs" / f"{step}.wrapper.log", start_epoch)]
-    last_alive = last_beat = time.time()
+    last_alive = last_beat = last_growth = time.time()
+    last_size = -1
     outcome = "done"
 
     def pump():
@@ -263,13 +267,21 @@ def run_or_reattach(fixed: dict, ctx: dict, step: str, host: str, soft_timeout_s
                     outcome = "lost"
                     log(f"{step}: job session {pid} on {h} is gone and wrote no exit code (killed, crashed, host reboot?)")
                     break
-        # soft timeout counts ACTIVE time only; waiting in the license queue has its own budget
-        over = ((now - active_since) > soft_timeout_s) if active_since is not None \
-            else ((now - t_start) > soft_timeout_s + license_wait_s)
-        if over:
+        size_now = tails[0].size()
+        if size_now != last_size:
+            last_size, last_growth = size_now, now
+        # limits count ACTIVE time only; waiting in the license queue has its own budget
+        what = None
+        if active_since is None:
+            if now - t_start > (soft_timeout_s or 0) + license_wait_s + (stall_timeout_s or 0):
+                what = f"never became active within {(now - t_start) / 3600:.1f} h (license queue / start-up?)"
+        elif stall_timeout_s and now - last_growth > stall_timeout_s:
+            what = (f"no new output in {tails[0].path.name} for {(now - last_growth) / 3600:.1f} h "
+                    f"(stall timeout {stall_timeout_s / 3600:.0f} h): the tool looks hung")
+        elif soft_timeout_s and now - active_since > soft_timeout_s:
+            what = f"max runtime {soft_timeout_s / 3600:.0f} h exceeded"
+        if what:
             outcome = "timeout"
-            what = (f"soft timeout {soft_timeout_s / 3600:.1f} h exceeded" if active_since is not None else
-                    f"never became active within {(soft_timeout_s + license_wait_s) / 3600:.1f} h (license queue?)")
             log(f"{step}: {what} -> killing the job")
             kill_step(fixed, run_dir, step, log=log)
             break

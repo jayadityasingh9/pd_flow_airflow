@@ -163,13 +163,15 @@ class PdStepOperator(BaseOperator):
                                         f"(see config/fixed.yaml rtl_fixes; report upstream)")
         attempt = f"{context['run_id']}:{context['ti'].try_number}"
         host = ctx["fc_host"]
-        soft = float(fixed["timeouts_h"][ctx["size"]][step]) * 3600
+        cap_h = (fixed.get("max_runtime_h") or {}).get(ctx["size"])
+        soft = float(cap_h) * 3600 if cap_h else None
+        stall = float(fixed.get("stall_timeout_h") or 0) * 3600 or None
         set_step(run_dir, step, status="running", host=host, started=now_iso(), attempt=attempt,
                  fatal=[], warnings=[], facts={})
         (Path(run_dir) / "qor" / f"{step}.json").unlink(missing_ok=True)
         self._run = (fixed, ctx)
         try:
-            res = run_or_reattach(fixed, ctx, step, host, soft, attempt, log=log).as_dict()
+            res = run_or_reattach(fixed, ctx, step, host, soft, attempt, log=log, stall_timeout_s=stall).as_dict()
         except remote.RemoteError as e:
             # ssh / host trouble is TRANSIENT: plain AirflowException so Airflow RETRIES the task
             # (a retry re-attaches to a job that is still running, or relaunches a dead one).

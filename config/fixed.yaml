@@ -133,13 +133,16 @@ rtl_fixes:
       corvi elaborates with 57 unbound modules. Same value, plain parentheses. VCS accepts both.
       Report to the RTL owners so it can be fixed in Perforce.
 
-# --- Limits per size class (S/M/L) ---------------------------------------------------------
-# Soft timeouts (hours): the step is killed after this. Placeholders until real runtimes are
-# known -- then set to ~3x the measured value.
-timeouts_h:
-  S: {build: 1, init_design: 2, compile: 4,  clock_opt_cts: 2,  clock_opt_opto: 2,  route_auto: 4,  route_opt: 4}
-  M: {build: 1, init_design: 4, compile: 12, clock_opt_cts: 8,  clock_opt_opto: 8,  route_auto: 12, route_opt: 12}
-  L: {build: 1, init_design: 6, compile: 24, clock_opt_cts: 16, clock_opt_opto: 16, route_auto: 24, route_opt: 24}
+# --- When is a running step stopped? ---------------------------------------------------------
+# NOT by wall-clock: corvi compile ran > 24 h and was healthy (FC prints "Still running" every
+# ~10 min). A step is stopped only when
+#   (a) its log shows NO new output for stall_timeout_h  (a hung tool), or
+#   (b) it runs longer than max_runtime_h for the module size -- a generous backstop (null = no cap).
+# Time spent waiting for a license (up to 12 h, license_env) is not counted in either.
+stall_timeout_h: 6
+max_runtime_h: {S: 48, M: 120, L: 240}
+# Measured so far (for reference): debug (S) compile 0.2 h, route_opt 0.4 h;
+# corvi (L) init_design 2.6 h, compile > 24 h (stopped by the old 24 h limit while healthy).
 min_free_disk_gb: {S: 10, M: 50, L: 150}   # on runs_root
 min_free_mem_gb:  {S: 16, M: 64, L: 200}   # MemAvailable on the chosen host
 
