@@ -4,6 +4,7 @@
     bash bin/pdflow.sh status <run_tag>       per-step status from run.json
     bash bin/pdflow.sh qor <run_tag> [step]   parsed QoR of a step (default: latest)
     bash bin/pdflow.sh kill <run_tag> [step]  kill the live job of a run (TERM, then KILL)
+    bash bin/pdflow.sh builds                 reusable RTL builds (paths for the form's "Build path")
     bash bin/pdflow.sh doctor                 is this account / host ready to run the flow?
     bash bin/pdflow.sh report <run_tag>       one .tar.gz with everything needed to look at a problem
 
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.error
 from pathlib import Path
 
@@ -168,6 +170,30 @@ def cmd_decide(fixed, a):
           f"sent. The run stops here (FAILED); resume later with run_tag={a.tag} and a later start_from.")
 
 
+def cmd_builds(fixed, a):
+    """Every finished build under runs_root: tag, module, config, -tech, date, path to give the form."""
+    from .buildsrc import build_tech_of
+    root = Path(fixed["runs_root"])
+    rows = []
+    for pw in sorted(root.glob("*/rm_fc_cad/vbuild/*/vbuild/py.Work"), key=lambda p: p.stat().st_mtime, reverse=True):
+        run = pw.parents[4]
+        if not (pw / "synthesis_rtl.f").is_file() or (pw / "synthesis_rtl.f").stat().st_size == 0:
+            continue
+        try:
+            inp = json.loads((run / "run.json").read_text())["inputs"]
+        except (OSError, KeyError, ValueError):
+            inp = {}
+        rows.append((run.name, inp.get("module", "?"), pw.parents[1].name, build_tech_of(pw) or "?",
+                     time.strftime("%Y-%m-%d", time.localtime(pw.stat().st_mtime)),
+                     "reused" if (pw / "PDFLOW_REUSED_FROM").exists() else "built"))
+    if not rows:
+        print(f"no builds under {root}")
+        return
+    print(f"{'run (use as Build path, prefix ' + str(root) + '/)':62} {'module':13} {'config':24} {'-tech':40} {'date':10} how")
+    for r in rows:
+        print(f"{r[0]:62} {r[1]:13} {r[2]:24} {r[3]:40} {r[4]:10} {r[5]}")
+
+
 def cmd_doctor(fixed, a):
     from .doctor import run_doctor
     print(f"pdflow doctor -- code {Path(__file__).resolve().parent.parent}")
@@ -208,13 +234,14 @@ def main(argv=None):
         p = sub.add_parser(c)
         p.add_argument("tag")
         p.add_argument("-m", default="", help="comment (saved in run.json / summary.md)")
+    sub.add_parser("builds")
     sub.add_parser("doctor")
     p = sub.add_parser("report")
     p.add_argument("tag")
     a = ap.parse_args(argv)
     fixed = load_fixed()
     {"list": cmd_list, "status": cmd_status, "qor": cmd_qor, "kill": cmd_kill, "gates": cmd_gates,
-     "review": cmd_review, "approve": cmd_decide, "reject": cmd_decide, "doctor": cmd_doctor,
+     "review": cmd_review, "approve": cmd_decide, "reject": cmd_decide, "doctor": cmd_doctor, "builds": cmd_builds,
      "report": cmd_report}[a.cmd](fixed, a)
 
 

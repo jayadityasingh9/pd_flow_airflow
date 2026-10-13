@@ -9,6 +9,7 @@ import json
 import re
 from pathlib import Path
 
+from .buildsrc import BUILD_SOURCES
 from .config import GATES, STEPS, module_cfg, step_index
 
 TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -150,6 +151,18 @@ def resolve(params: dict, fixed: dict, now: str, dag_run_id: str, build_configs:
         errs.append(f"resume: max_low_vt_pct {prev['max_low_vt_pct']} -> {low_vt} only takes effect from compile "
                     f"(synthesis); use start_from=compile or earlier")
 
+    # --- where the RTL comes from
+    src = p.get("build_source") or prev.get("build_source") or "build"
+    bpath = (p.get("build_path") or "").strip() or (prev.get("build_path") or "")
+    if src not in BUILD_SOURCES:
+        errs.append(f"build_source={src!r} must be one of {', '.join(BUILD_SOURCES)}")
+    if src != "build" and not bpath:
+        errs.append(f"build_source={src} needs 'Build path' ("
+                    + ("a run dir / vbuild/<config> dir / py.Work dir of an existing build" if src == "existing"
+                       else "an RM-style Tcl filelist: set RTL_SOURCE_FILES ... / set INC_DIRS ...") + ")")
+    if prev and src != prev.get("build_source", "build"):
+        errs.append(f"resume: run {tag} got its RTL via {prev.get('build_source', 'build')}, not {src}")
+
     if dry and is_resume:
         errs.append("dry_run is for NEW runs only (a dry resume would rewrite the existing run's state)")
 
@@ -187,13 +200,18 @@ def resolve(params: dict, fixed: dict, now: str, dag_run_id: str, build_configs:
         "tech_dir": tech,
         "build_tech": build_tech,
         "max_low_vt_pct": low_vt,
+        "build_source": src,
+        "build_path": bpath,
         "created": now,
     }
 
 
 def step_mode(ctx: dict, step: str) -> str:
-    """'reuse' (before start_from: verify only), 'skip' (after stop_at), 'dry', or 'run'."""
+    """'reuse' (before start_from: verify only), 'skip' (after stop_at), 'dry', 'run', or
+    'provided' (build step when the RTL comes from an existing build / a user filelist)."""
     i = step_index(step)
+    if step == "build" and ctx.get("build_source", "build") != "build" and i >= step_index(ctx["start_from"]):
+        return "provided"
     if i < step_index(ctx["start_from"]):
         return "reuse"
     if i > step_index(ctx["stop_at"]):

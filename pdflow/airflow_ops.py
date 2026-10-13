@@ -139,6 +139,25 @@ class PdStepOperator(BaseOperator):
             log(f"REUSED {step} from run {ctx['run_tag']} (start_from={ctx['start_from']}); status "
                 f"{step_state(run_dir, step).get('status')}")
             return {"mode": "reuse"}
+        if mode == "provided":
+            from .buildsrc import BuildSourceError, check_existing, check_filelist, install_existing, install_filelist
+            _relock(ctx)
+            try:
+                if ctx["build_source"] == "existing":
+                    r = check_existing(ctx["build_path"], ctx["build_tech"])
+                    where = install_existing(ctx, r["pywork"], log=log) if not ctx["dry_run"] else "(dry run)"
+                    note = f"reused build {r['pywork']} ({r['rtl_files']} RTL files, -tech {r['build_tech']})"
+                else:
+                    r = check_filelist(ctx["build_path"])
+                    where = install_filelist(ctx, fixed, r["filelist"], log=log) if not ctx["dry_run"] else "(dry run)"
+                    note = f"custom filelist {r['filelist']} ({r['rtl_files']} RTL files, {r['inc_dirs']} include dirs)"
+            except BuildSourceError as e:
+                set_step(run_dir, step, status="fail", fatal=[str(e)], ended=now_iso())
+                raise AirflowFailException(f"build source: {e}") from None
+            log(f"BUILD STEP NOT RUN: {note} -> {where}")
+            set_step(run_dir, step, status="dry" if ctx["dry_run"] else "provided", source=ctx["build_source"],
+                     path=ctx["build_path"], note=note, warnings=r.get("warnings", []), time=now_iso())
+            return {"mode": "provided", "note": note}
         if mode == "dry":
             sp = script_path(ctx, step)
             log(f"DRY RUN: would launch {sp} on {ctx['fc_host']}:\n{sp.read_text()}")

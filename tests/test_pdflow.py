@@ -845,3 +845,72 @@ def test_scripts_carry_tech_and_cores_line(fixed):
     assert "setenv TECH_DIR    GF_22FDXP_6P75T_116A" in env
     comp = Path(out["compile"]).read_text()
     assert "pdflow: cores: requested max_cores 24" in comp and "TECH_DIR=GF_22FDXP_6P75T_116A" in comp
+
+
+# ------------------------------------------------------------------------------- build source
+REAL_BUILD = "/home/jsingh9.scratch/raven_local_ws/debug_2Core_4VC_32K_rvn_drive_20261006-230836"
+
+
+def test_build_source_existing_real_build(fixed):
+    from pdflow import buildsrc
+    if not Path(REAL_BUILD, "run.json").is_file():
+        pytest.skip("reference run not present")
+    r = buildsrc.check_existing(REAL_BUILD, "gf_22fdxp_9t_autopro150_9m_emram_stack")
+    assert r["rtl_files"] > 10 and r["pywork"].endswith("2Core_4VC_32K_rvn_drive/vbuild/py.Work")
+    # a different tech node is refused (point 1: hard refusal)
+    with pytest.raises(buildsrc.BuildSourceError, match="tied to its tech"):
+        buildsrc.check_existing(REAL_BUILD, "gf_22fdxp_6p75t_116a")
+    with pytest.raises(buildsrc.BuildSourceError, match="does not exist"):
+        buildsrc.check_existing("/nonexistent/run", "x")
+
+
+def test_build_source_install_existing_and_modes(fixed, tmp_path):
+    from pdflow import buildsrc
+    if not Path(REAL_BUILD, "run.json").is_file():
+        pytest.skip("reference run not present")
+    c = ctx_for(fixed, build_source="existing", build_path=REAL_BUILD)
+    assert c["build_source"] == "existing" and context.step_mode(c, "build") == "provided"
+    assert context.step_mode(c, "init_design") == "run"
+    Path(c["rc_dir"]).mkdir(parents=True)
+    dst = buildsrc.install_existing(c, buildsrc.check_existing(REAL_BUILD, c["build_tech"])["pywork"], log=lambda m: None)
+    for f in buildsrc.PYWORK_FILES:
+        assert (dst / f).is_file() and (dst / f).stat().st_size > 0
+    assert (dst / "PDFLOW_REUSED_FROM").read_text().strip().endswith("py.Work")
+    assert str(dst).startswith(c["rc_dir"])                 # installed into THIS run's copy
+    with pytest.raises(context.InputError, match="needs 'Build path'"):
+        ctx_for(fixed, build_source="existing")
+    with pytest.raises(context.InputError, match="must be one of"):
+        ctx_for(fixed, build_source="magic", build_path="/x")
+
+
+def test_build_source_filelist(fixed, tmp_path):
+    from pdflow import buildsrc
+    rtl = tmp_path / "a.sv"; rtl.write_text("module a; endmodule\n")
+    inc = tmp_path / "inc"; inc.mkdir()
+    fl = tmp_path / "my.tcl"
+    fl.write_text(f'set RTL_SOURCE_FILES "\\\n{rtl} \\\n"\nset INC_DIRS "{inc}"\n')
+    r = buildsrc.check_filelist(str(fl))
+    assert r["rtl_files"] == 1 and r["inc_dirs"] == 1 and not r["warnings"]
+    fl.write_text(f'set RTL_SOURCE_FILES {{ relative.sv }}\n')
+    with pytest.raises(buildsrc.BuildSourceError, match="relative"):
+        buildsrc.check_filelist(str(fl))
+    fl.write_text(f'set RTL_SOURCE_FILES {{ /no/such/file.sv }}\n')
+    with pytest.raises(buildsrc.BuildSourceError, match="do not exist"):
+        buildsrc.check_filelist(str(fl))
+    fl.write_text("# nothing\n")
+    with pytest.raises(buildsrc.BuildSourceError, match="RTL_SOURCE_FILES"):
+        buildsrc.check_filelist(str(fl))
+    # install: the run copy's read script is rewritten to source the run's user_filelist.tcl
+    fl.write_text(f'set RTL_SOURCE_FILES "{rtl}"\nset INC_DIRS "{inc}"\n')
+    c = ctx_for(fixed, module="corvi_module", build_source="filelist", build_path=str(fl))
+    common = Path(c["module_dir"]) / "block_files" / "common"
+    common.mkdir(parents=True)
+    src = Path(fixed["rm_fc_cad_src"]) / "corvi_module/block_files/common/corvi_module.FC.read_design.tcl"
+    shutil.copy(src, common / "corvi_module.FC.read_design.tcl")
+    Path(c["run_dir"]).mkdir(parents=True, exist_ok=True)
+    dst = buildsrc.install_filelist(c, fixed, str(fl), log=lambda m: None)
+    txt = (common / "corvi_module.FC.read_design.tcl").read_text()
+    assert str(dst) in txt and "$MIPS_HOME/../filelists/corvi_syn_rtl.tcl" not in txt
+    assert dst.read_text() == fl.read_text()
+    # Perforce copy untouched
+    assert "$MIPS_HOME/../filelists/corvi_syn_rtl.tcl" in src.read_text()

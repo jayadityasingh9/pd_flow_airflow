@@ -61,6 +61,8 @@ bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/af.sh dags trigger rav
 |---|---|---|
 | **pd host** (`fc_host`) | *required* | mipspd81 … mipspd85. The build and every FC step run there (over ssh). precheck prints the live load / free RAM of all 5 hosts. pd81/82 = 128 cores, pd83-85 = 32. |
 | **Module** | *required* | corvi_module / cic_module / debug_module / trf_module → sets DESIGN_NAME, top RTL, default config and clock. On a **resume** pick the run's own module (a different one is refused). |
+| **RTL source** | Run build.py | Where FC gets its RTL: **Run build.py** (fresh filelists, default) · **Reuse an existing build** (skips build.py; takes another run's `synthesis_*.f`; the build's `-tech` must equal the chosen Technology node, otherwise refused) · **Custom filelist** (an RM-style Tcl file you provide). `bash bin/pdflow.sh builds` lists reusable builds. |
+| **Build path** | blank | Needed for the last two: a run folder such as `/home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261006-232004` (or its `vbuild/<config>` / `py.Work` dir), or the absolute path of your `.tcl` filelist. |
 | **Technology node** | 9T eMRAM stack | The RM tech dir (`<module>/block_files/<TECH_DIR>`) **and** the matching `build.py -tech`. Every module has `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack`; corvi_module also offers `GF_22FDXP_6P75T_116A`, `GF_22FDXP_6P75T`, `GF_22FDXP_9T_AutoPro150`, `SYN_5FF_6TMVT`. A tech dir the module lacks is refused. Fixed for the life of a run (a different node = a new run). |
 | **Build config** | module default | `-c`/`SYN_CONFIG`, e.g. `2Core_4VC_32K`, `2Core_4VC_32K_rvn_drive` (the 41 dirs in `$MIPS_HOME/raven/src/config`). |
 | **Clock period (ns)** | module default | Patches `set Clk_period` in the run copy's `design_setup.tcl` (drives every functional clock). Defaults: corvi 1.25, cic 1.25, debug 2, trf 1.25. |
@@ -161,6 +163,24 @@ All in `config/fixed.yaml` (a snapshot is stored in every `run.json`):
 | cic_module | cm3_cic | 2Core_4VC_32K_rvn_drive | 1.25 ns | cm3_cic.def |
 | debug_module | rvn_dbu_top_wrapper | 2Core_4VC_32K_rvn_drive | 2 ns | rvn_dbu_top_wrapper.def |
 | trf_module | rvn_mips_l2trf_top | 2Core_4VC_32K_rvn_drive | 1.25 ns | automatic |
+
+## 6a. Custom filelist format
+
+RM-style Tcl, absolute paths, packages listed first inside `RTL_SOURCE_FILES` (the RM read script's
+override branch analyzes only that list):
+
+```tcl
+set INC_DIRS "/home/me/rtl/include /home/me/rtl/cfg"
+set RTL_SOURCE_FILES "\
+  /home/me/rtl/pkg/my_pkg.sv \
+  /home/me/rtl/top.sv \
+  /home/me/rtl/sub.sv \
+"
+```
+
+precheck validates it (every path must exist). The flow copies it to `<run>/user_filelist.tcl` and
+points the run copy's `<DESIGN>.FC.read_design.tcl` at it; Perforce is untouched. The `build_rtl`
+box then shows **provided** instead of running build.py.
 
 ## 6b. Where the build data comes from
 

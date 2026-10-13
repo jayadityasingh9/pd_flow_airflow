@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import remote
 from .config import STEPS, module_cfg, step_index
+from .buildsrc import BuildSourceError, check_existing, check_filelist
 from .patch import check_specs, check_toggles, specs_from_fixed, toggles_from_fixed
 from .runner import live_jobs
 from .workspace import LOCK, verify_reusable
@@ -76,6 +77,17 @@ def run_precheck(ctx: dict, fixed: dict, log=print, lock_owner_finished=None) ->
         warn.append(f"non-default technology {ctx['tech_dir']} (build -tech {ctx.get('build_tech')}): the RTL build "
                     f"and FC libraries follow it; the module's DEF/SDC for that tech dir are used as-is")
     fatal += check_toggles(mod, toggles_from_fixed(fixed))
+
+    try:
+        if ctx.get("build_source") == "existing":
+            r = check_existing(ctx["build_path"], ctx["build_tech"])
+            log(f"build source: reuse {r['pywork']} ({r['rtl_files']} RTL files, -tech {r['build_tech']})")
+        elif ctx.get("build_source") == "filelist":
+            r = check_filelist(ctx["build_path"])
+            log(f"build source: custom filelist {r['filelist']} ({r['rtl_files']} RTL files, {r['inc_dirs']} include dirs)")
+            warn.extend(r.get("warnings", []))
+    except BuildSourceError as e:
+        fatal.append(f"build source: {e}")
 
     ov = Path(fixed["mips_home"]).parent / "filelists" / mcfg["filelist_override"]
     if ov.exists():

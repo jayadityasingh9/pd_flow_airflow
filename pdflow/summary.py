@@ -14,7 +14,7 @@ INDEX_HDR = "time\trun_tag\tmodule\tbuild_config\tclk_ns\tcores\thost\tstart_fro
 
 def overall(ctx: dict, manifest: dict) -> tuple[bool, list[str]]:
     """(ok, problems): every step in [start_from..stop_at] must be ok/warn (dry in a dry run)."""
-    good = ("dry", "ok", "warn") if ctx["dry_run"] else ("ok", "warn")
+    good = ("dry", "ok", "warn", "provided") if ctx["dry_run"] else ("ok", "warn", "provided")
     probs = []
     for s in STEPS[step_index(ctx["start_from"]): step_index(ctx["stop_at"]) + 1]:
         st = manifest.get("steps", {}).get(s, {})

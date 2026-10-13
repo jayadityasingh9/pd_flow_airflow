@@ -176,9 +176,16 @@ def verify_reusable(ctx: dict, step: str) -> list[str]:
     if st.get("status") not in OK_STATES:
         probs.append(f"{step}: status in run.json is {st.get('status') or 'missing'} (needs ok/warn)")
     if step == "build":
+        if ctx.get("build_source") == "filelist":
+            if not (Path(ctx["run_dir"]) / "user_filelist.tcl").is_file():
+                probs.append("build: the run's user_filelist.tcl is missing")
+            return [p for p in probs if "status in run.json" not in p] + \
+                ([] if st.get("status") in OK_STATES + ("provided",) else [f"build: status {st.get('status')}"])
         for f in synthesis_files(ctx):
             if not f.is_file() or f.stat().st_size == 0:
                 probs.append(f"build: {f} missing/empty")
+        if st.get("status") == "provided":
+            probs = [p for p in probs if "status in run.json" not in p]
     else:
         tmp = fc_tmp(ctx)
         marker = tmp / step

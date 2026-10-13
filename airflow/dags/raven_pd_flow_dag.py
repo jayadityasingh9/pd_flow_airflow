@@ -74,6 +74,21 @@ PARAMS = {
         description="Blank = the module's default (corvi: 2Core_4VC_32K, others: 2Core_4VC_32K_rvn_drive). "
                     "Must be a directory in $MIPS_HOME/raven/src/config.",
         section="Where / what"),
+    "build_source": Param(
+        "build", type="string", enum=["build", "existing", "filelist"], title="RTL source",
+        values_display={"build": "Run build.py (default) -- fresh RTL filelists from this run",
+                        "existing": "Reuse an existing build -- skip build.py, take its synthesis_*.f",
+                        "filelist": "Custom filelist -- an RM-style Tcl filelist you provide"},
+        description="Where FC gets its RTL. 'existing' needs Build path = another run's folder (or its "
+                    "vbuild/<config> / py.Work dir); the build's -tech must match the chosen Technology node. "
+                    "'filelist' needs Build path = a Tcl file with `set RTL_SOURCE_FILES {...}` (packages first) "
+                    "and `set INC_DIRS {...}`, absolute paths. `bin/pdflow.sh builds` lists reusable builds.",
+        section="Where / what"),
+    "build_path": Param(
+        None, type=["null", "string"], title="Build path (for 'existing' / 'filelist')",
+        description="Existing build: e.g. /home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261006-232004 "
+                    "(a run dir; its build config is read from run.json). Custom filelist: absolute path of the .tcl.",
+        section="Where / what"),
     "tech_node": Param(
         FIXED["tech_dir"], type="string", enum=list(TECH_NODES), title="Technology node",
         values_display={k: f"{k}  —  {v.get('label', '')}" for k, v in TECH_NODES.items()},
@@ -152,7 +167,8 @@ def raven_pd_flow():
         except InputError as e:
             raise AirflowFailException("Please fix the trigger form:\n  - " + str(e).replace("\n", "\n  - "))
         print("Resolved run:")
-        for k in ("run_tag", "module", "design_name", "build_config", "tech_dir", "build_tech", "clk_str",
+        for k in ("run_tag", "module", "design_name", "build_config", "build_source", "build_path", "tech_dir",
+                  "build_tech", "clk_str",
                   "max_cores", "max_low_vt_pct", "fc_host", "start_from", "stop_at", "gates", "dry_run", "run_dir"):
             print(f"  {k:14} {ctx[k]}")
         return ctx

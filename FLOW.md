@@ -63,7 +63,7 @@ flowchart LR
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': {'background': '#1e1e1e', 'mainBkg': '#252526', 'primaryColor': '#2d2d30', 'primaryTextColor': '#d4d4d4', 'primaryBorderColor': '#6e6e6e', 'secondaryColor': '#2d2d30', 'tertiaryColor': '#1e1e1e', 'lineColor': '#9e9e9e', 'textColor': '#d4d4d4', 'clusterBkg': '#252526', 'clusterBorder': '#555555', 'edgeLabelBackground': '#1e1e1e', 'noteBkgColor': '#3a3d41', 'noteTextColor': '#d4d4d4', 'noteBorderColor': '#6e6e6e', 'actorBkg': '#2d2d30', 'actorBorder': '#6e6e6e', 'actorTextColor': '#d4d4d4', 'signalColor': '#d4d4d4', 'signalTextColor': '#d4d4d4', 'labelBoxBkgColor': '#2d2d30', 'labelTextColor': '#d4d4d4', 'loopTextColor': '#d4d4d4', 'activationBkgColor': '#3a3d41', 'fontFamily': 'Segoe UI, Ubuntu, sans-serif'}}}%%
 flowchart TD
-    T(["Trigger DAG w/ config<br/>(form: host, module, tech node, config, clock, cores,<br/>max low-VT %, S19 knob, start_from, stop_at, run_tag, gates, dry_run)"])
+    T(["Trigger DAG w/ config<br/>(form: host, module, RTL source + build path, tech node, config, clock,<br/>cores, max low-VT %, S19 knob, start_from, stop_at, run_tag, gates, dry_run)"])
     T --> R
 
     R["<b>resolve_inputs</b><br/>form → one resolved run<br/>(defaults, run_tag, checks)"]
@@ -146,6 +146,7 @@ one of four modes:
 flowchart TD
     S["tool step starts"] --> Q1{"step BEFORE start_from?"}
     Q1 -- yes --> RE["<b>REUSE</b><br/>verify old result is usable<br/>(status ok/warn, marker + nlib exist,<br/>marker order) → green, nothing runs"]
+    S -. "build step, RTL source = existing / filelist" .-> PV["<b>PROVIDED</b><br/>validate + install the given build or filelist<br/>→ green, build.py not run"]
     Q1 -- no --> Q2{"step AFTER stop_at?"}
     Q2 -- yes --> SK["<b>SKIP</b><br/>first such step marks itself skipped;<br/>Airflow then skips the rest (pink)"]
     Q2 -- no --> Q3{"dry_run?"}
