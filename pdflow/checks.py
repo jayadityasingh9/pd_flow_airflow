@@ -130,6 +130,7 @@ def check_build(ctx: dict, res: dict) -> Verdict:
 ERR_ID = re.compile(r"^Error:.*\(([A-Z][A-Z0-9_]*-\d+)\)\s*$")
 CLK_ECHO = re.compile(r"^\s*set\s+Clk_period\s+([0-9.]+)")
 CORES_ECHO = re.compile(r"^\s*set_host_options\s+-max_cores\s+(\d+)")
+THREADS_RE = re.compile(r"^Information: Timer using (\d+) threads")
 
 
 MSG_ROW = re.compile(r"^([A-Z][A-Z0-9_]*-\d+[a-z]?)\s+Error\s+\d+\s+(\d+)\s+(\d+)\s*$")
@@ -139,7 +140,7 @@ FATAL_ID_FAMILIES = re.compile(r"^(ELAB|VER|LNK|NDM)-")
 def scan_fc_log(path: Path, fatal_patterns: list[str]) -> dict:
     fatal_re = [re.compile(p) for p in fatal_patterns]
     out = {"fatal": [], "error_ids": Counter(), "error_first": {}, "rm_errors": [], "thank_you": False,
-           "clk_echo": None, "cores_echo": None, "lines": 0, "s19_continued": False,
+           "clk_echo": None, "cores_echo": None, "timer_threads": None, "lines": 0, "s19_continued": False,
            "error_source": "log lines"}
     table: dict = {}
     in_table = False
@@ -170,6 +171,9 @@ def scan_fc_log(path: Path, fatal_patterns: list[str]) -> dict:
             m = CORES_ECHO.match(line)
             if m:
                 out["cores_echo"] = int(m.group(1))
+            m = THREADS_RE.match(line)
+            if m:
+                out["timer_threads"] = int(m.group(1))
             if line.startswith("RM-error") and len(out["rm_errors"]) < 50:
                 out["rm_errors"].append(f"{n}: {line[:300]}")
             if line.startswith("Error") or line.startswith("Fatal") or "RM-error" in line or "exiting" in line \
@@ -217,6 +221,7 @@ def check_fc_step(ctx: dict, fixed: dict, step: str, res: dict, allow_ids: set |
         return v
     scan = scan_fc_log(log, fixed["fatal_patterns"])
     v.facts.update({"log_lines": scan["lines"], "clk_echo": scan["clk_echo"], "cores_echo": scan["cores_echo"],
+                    "timer_threads": scan["timer_threads"],
                     "error_ids": dict(scan["error_ids"])})
     # F3
     if not scan["thank_you"]:

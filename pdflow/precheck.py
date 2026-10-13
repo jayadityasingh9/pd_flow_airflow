@@ -71,7 +71,10 @@ def run_precheck(ctx: dict, fixed: dict, log=print, lock_owner_finished=None) ->
         uf = _tcl_set(fcs.read_text(errors="replace"), "UNIFIED_FLOW")
         if uf != "true":
             fatal.append(f"fc_setup.tcl UNIFIED_FLOW={uf!r}: this flow assumes true (compile saves place_opt)")
-    fatal += check_specs(mod, specs_from_fixed(fixed))
+    fatal += check_specs(mod, specs_from_fixed(fixed, ctx["tech_dir"]))
+    if ctx.get("tech_dir") != fixed["tech_dir"]:
+        warn.append(f"non-default technology {ctx['tech_dir']} (build -tech {ctx.get('build_tech')}): the RTL build "
+                    f"and FC libraries follow it; the module's DEF/SDC for that tech dir are used as-is")
     fatal += check_toggles(mod, toggles_from_fixed(fixed))
 
     ov = Path(fixed["mips_home"]).parent / "filelists" / mcfg["filelist_override"]

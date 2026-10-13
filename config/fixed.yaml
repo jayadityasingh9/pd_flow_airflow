@@ -52,7 +52,26 @@ build_extra_f:
   - /mips/proj/ravendrive/pd/libs/std_cells/globalfoundaries22nhsp/LATEST/hdl/lvt/1.00a/verilog/std_primitives.v
 
 # --- Fusion Compiler RM ------------------------------------------------------------------
+# Default technology (TECH_DIR under <module>/block_files/). Chosen per run in the form; each
+# entry pairs the RM tech dir with the build.py -tech it needs. Only tech dirs that exist for
+# the chosen module are offered (precheck refuses the others).
 tech_dir: GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack
+tech_nodes:
+  GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack:
+    label: "GF 22FDX 9T AutoPro150, 9M eMRAM stack (default)"
+    build_tech: gf_22fdxp_9t_autopro150_9m_emram_stack
+  GF_22FDXP_9T_AutoPro150:
+    label: "GF 22FDX 9T AutoPro150"
+    build_tech: gf_22fdxp_9t_autopro150
+  GF_22FDXP_6P75T_116A:
+    label: "GF 22FDX 6.75T 116A"
+    build_tech: gf_22fdxp_6p75t_116a
+  GF_22FDXP_6P75T:
+    label: "GF 22FDX 6.75T"
+    build_tech: gf_22fdxp_6p75t_116a
+  SYN_5FF_6TMVT:
+    label: "Synopsys 5FF 6T MVT (generic libs)"
+    build_tech: syn_5ff_6tmvt
 
 # --- The 4 modules ---------------------------------------------------------------------
 modules:
@@ -104,6 +123,14 @@ patches:
     file: scripts_block/rm_setup/fc_setup.tcl
     pattern: '^set_host_options -max_cores [0-9]+[ \t]*$'
     replace: 'set_host_options -max_cores {cores}'
+  # "Max low-VT %": the share of low-VT (ULVT) cells FC may use (set_multi_vth_constraint).
+  # The RM default is 10. The form's max_low_vt_pct value is written here. Optional: skipped
+  # (with a warning) if the tech dir's settings file does not have the line.
+  - id: max_low_vt_pct
+    file: scripts_block/rm_fc_scripts/settings.non_persistent.tcl
+    pattern: '^set_multi_vth_constraint -low_vt_percentage [0-9]+[ \t]*$'
+    replace: 'set_multi_vth_constraint -low_vt_percentage {low_vt}'
+    optional: true
 
 # --- On/off patches driven by a trigger-form boolean (run copy only; reversible) ---------
 # compile.tcl EXITS (before its reports + marker) when DFT DRC finds Rule S19 (nonscan cell

@@ -26,6 +26,7 @@ from .scripts import launcher_path, script_path, tool_log
 STREAM_RE = re.compile(
     r"^(Error|Fatal|RM-error)\b|FLW-800[01]|FLW-8100|Thank you for using|"
     r" - CRITICAL - | - ERROR - |Error-\[|^pdflow:|Traceback|No clocks created|Rule S19|"
+    r"^Information: Timer using \d+ threads|^\s*set_host_options -max_cores|"
     r"(?i:license).*(queue|wait|denied|checkout)")
 # First sign that fc_shell got its license and is executing the RM scripts (fc_setup.tcl is
 # the first thing every step sources, with -echo). Time before this is license queueing.

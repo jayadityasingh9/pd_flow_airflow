@@ -207,6 +207,10 @@ class PdStepOperator(BaseOperator):
                  fatal=v.fatal, warnings=v.warnings, facts=v.facts, ended=now_iso())
         mark_consumed(run_dir, step, res["launch_id"] or attempt)
 
+        if step != "build":
+            log(f"cores: requested max_cores={ctx['max_cores']}, FC applied set_host_options -max_cores "
+                f"{v.facts.get('cores_echo', '?')}, timer threads {v.facts.get('timer_threads', '?')} "
+                f"(host {res['host']})")
         log(f"==== {step}: {status.upper()}  (rc={res['rc']}, {res['elapsed_s'] / 60:.1f} min on {res['host']})")
         for w in v.warnings:
             log(f"WARN  {w}")

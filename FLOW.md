@@ -63,7 +63,7 @@ flowchart LR
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': {'background': '#1e1e1e', 'mainBkg': '#252526', 'primaryColor': '#2d2d30', 'primaryTextColor': '#d4d4d4', 'primaryBorderColor': '#6e6e6e', 'secondaryColor': '#2d2d30', 'tertiaryColor': '#1e1e1e', 'lineColor': '#9e9e9e', 'textColor': '#d4d4d4', 'clusterBkg': '#252526', 'clusterBorder': '#555555', 'edgeLabelBackground': '#1e1e1e', 'noteBkgColor': '#3a3d41', 'noteTextColor': '#d4d4d4', 'noteBorderColor': '#6e6e6e', 'actorBkg': '#2d2d30', 'actorBorder': '#6e6e6e', 'actorTextColor': '#d4d4d4', 'signalColor': '#d4d4d4', 'signalTextColor': '#d4d4d4', 'labelBoxBkgColor': '#2d2d30', 'labelTextColor': '#d4d4d4', 'loopTextColor': '#d4d4d4', 'activationBkgColor': '#3a3d41', 'fontFamily': 'Segoe UI, Ubuntu, sans-serif'}}}%%
 flowchart TD
-    T(["Trigger DAG w/ config<br/>(form: host, module, config, clock, cores,<br/>S19 knob, start_from, stop_at, run_tag, gates, dry_run)"])
+    T(["Trigger DAG w/ config<br/>(form: host, module, tech node, config, clock, cores,<br/>max low-VT %, S19 knob, start_from, stop_at, run_tag, gates, dry_run)"])
     T --> R
 
     R["<b>resolve_inputs</b><br/>form → one resolved run<br/>(defaults, run_tag, checks)"]
@@ -251,7 +251,7 @@ Details that matter:
 
 | Task | Tool command — FC steps run in `rm_fc_cad/<module>/rm_fc/tmp/` as `fc_shell -f ../../scripts_block/rm_fc_scripts/<step>.tcl < /dev/null >& ../logs/<step>.log` | Main reports in `rpts/<step>/` |
 |---|---|---|
-| **build_rtl** (pool `pd_build`) | in `rm_fc_cad/vbuild/`: `build.py ravenRTL -t <top> --configName <cfg> --workDirectory <cfg> -bt Synthesis -tech gf_22fdxp_9t_autopro150_9m_emram_stack -f <gf22 lvt .v> -f <std_primitives.v>` (env: `source_env.csh`, `IMGSITE=SC`) | `vbuild/<cfg>/build.log`, `vbuild/<cfg>/vbuild/py.Work/synthesis_{rtl,inc,pkg}.f` |
+| **build_rtl** (pool `pd_build`) | in `rm_fc_cad/vbuild/`: `build.py ravenRTL -t <top> --configName <cfg> --workDirectory <cfg> -bt Synthesis -tech <build_tech of the technology node> -f <gf22 lvt .v> -f <std_primitives.v>` (env: `source_env.csh`, `IMGSITE=SC`) | `vbuild/<cfg>/build.log`, `vbuild/<cfg>/vbuild/py.Work/synthesis_{rtl,inc,pkg}.f` |
 | **fc_init_design** (all fc_* : pool `pd_fc`) | `fc_shell -f init_design.tcl` — reads the build's filelists, elaborates `<DESIGN>`, reads DEF, MCMM, PG | `init_design.check_legality`, `.report_unbound`, `.report_ref_libs`, `.report_scenarios.rpt`; creates `<DESIGN>.nlib` |
 | **fc_compile** | `fc_shell -f compile.tcl` — `compile_fusion` (logic opto, DFT insert, initial/final place). compile.tcl also saves the `place_opt` nlib label (unified flow); the step script then writes the `place_opt` marker | `compile.report_qor`, `.report_global_timing`, `.report_utilization`, `.report_timing.max`, `.qor.qor`, DFT `*.dft_drc`, `dft_drc_full.rpt` |
 | **fc_clock_opt_cts** | `fc_shell -f clock_opt_cts.tcl` — build + route clock tree | `clock_opt_cts.report_qor`, `.report_clock_qor.summary`, `.check_routes`, … |

@@ -24,7 +24,8 @@ class PatchSpec:
     id: str
     file: str          # relative to the module dir
     pattern: str       # MULTILINE regex
-    replace: str       # re.sub template with {clk} / {cores} placeholders
+    replace: str       # re.sub template with {clk} / {cores} / {low_vt} placeholders
+    optional: bool = False   # True: a file without the line is skipped (warned), not an error
 
     def rendered(self, values: dict) -> str:
         out = self.replace
@@ -33,8 +34,11 @@ class PatchSpec:
         return out
 
 
-def specs_from_fixed(fixed: dict) -> list[PatchSpec]:
-    return [PatchSpec(s["id"], s["file"].replace("{tech_dir}", fixed["tech_dir"]), s["pattern"], s["replace"])
+def specs_from_fixed(fixed: dict, tech_dir: str | None = None) -> list[PatchSpec]:
+    """{tech_dir} in a spec's file is the run's technology dir (default: config tech_dir)."""
+    td = tech_dir or fixed["tech_dir"]
+    return [PatchSpec(s["id"], s["file"].replace("{tech_dir}", td), s["pattern"], s["replace"],
+                      bool(s.get("optional", False)))
             for s in fixed["patches"]]
 
 
@@ -48,10 +52,11 @@ def check_specs(module_dir, specs: list[PatchSpec]) -> list[str]:
     for s in specs:
         f = Path(module_dir) / s.file
         if not f.is_file():
-            probs.append(f"{s.id}: {f} not found")
+            if not s.optional:
+                probs.append(f"{s.id}: {f} not found")
             continue
         n = count_matches(f.read_text(errors="replace"), s)
-        if n != 1:
+        if n != 1 and not (s.optional and n == 0):
             probs.append(f"{s.id}: pattern {s.pattern!r} matches {n}x in {f} (expected exactly 1)")
     return probs
 
@@ -68,11 +73,18 @@ def apply_patches(module_dir, specs: list[PatchSpec], values: dict, diff_path) -
     for rel, fspecs in by_file.items():
         f = module_dir / rel
         if not f.is_file():
+            if all(s.optional for s in fspecs):
+                for s in fspecs:
+                    changes.append({"id": s.id, "file": str(f), "before": "", "after": "", "skipped": "file not present"})
+                continue
             raise PatchError(f"{f} not found")
         old = f.read_text(errors="replace")
         new = old
         for s in fspecs:
             m = list(re.finditer(s.pattern, new, flags=re.M))
+            if s.optional and not m:
+                changes.append({"id": s.id, "file": str(f), "before": "", "after": "", "skipped": "line not present"})
+                continue
             if len(m) != 1:
                 raise PatchError(f"{s.id}: pattern matches {len(m)}x in {f} (expected exactly 1)")
             repl = s.rendered(values)
@@ -94,8 +106,11 @@ def apply_patches(module_dir, specs: list[PatchSpec], values: dict, diff_path) -
         # read back: each spec now matches exactly once AND the match is the rendered text
         back = f.read_text(errors="replace")
         for s in fspecs:
+            done = [c for c in changes if c["id"] == s.id][-1]
+            if done.get("skipped"):
+                continue
             m = list(re.finditer(s.pattern, back, flags=re.M))
-            want = [c["after"] for c in changes if c["id"] == s.id][-1]
+            want = done["after"]
             if len(m) != 1 or m[0].group(0) != want:
                 raise PatchError(f"{s.id}: read-back of {f} does not show {want!r}")
     return changes

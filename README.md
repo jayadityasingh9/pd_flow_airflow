@@ -61,9 +61,11 @@ bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/af.sh dags trigger rav
 |---|---|---|
 | **pd host** (`fc_host`) | *required* | mipspd81 … mipspd85. The build and every FC step run there (over ssh). precheck prints the live load / free RAM of all 5 hosts. pd81/82 = 128 cores, pd83-85 = 32. |
 | **Module** | *required* | corvi_module / cic_module / debug_module / trf_module → sets DESIGN_NAME, top RTL, default config and clock. On a **resume** pick the run's own module (a different one is refused). |
+| **Technology node** | 9T eMRAM stack | The RM tech dir (`<module>/block_files/<TECH_DIR>`) **and** the matching `build.py -tech`. Every module has `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack`; corvi_module also offers `GF_22FDXP_6P75T_116A`, `GF_22FDXP_6P75T`, `GF_22FDXP_9T_AutoPro150`, `SYN_5FF_6TMVT`. A tech dir the module lacks is refused. Fixed for the life of a run (a different node = a new run). |
 | **Build config** | module default | `-c`/`SYN_CONFIG`, e.g. `2Core_4VC_32K`, `2Core_4VC_32K_rvn_drive` (the 41 dirs in `$MIPS_HOME/raven/src/config`). |
 | **Clock period (ns)** | module default | Patches `set Clk_period` in the run copy's `design_setup.tcl` (drives every functional clock). Defaults: corvi 1.25, cic 1.25, debug 2, trf 1.25. |
 | **Max cores** | 16 | `set_host_options -max_cores` (patched in `fc_setup.tcl` — the one that takes effect — and `design_setup.tcl`). ≤ cores of the host. |
+| **Max low-VT cells (%)** | 10 | Upper limit on low-VT (ULVT) cell usage: `set_multi_vth_constraint -low_vt_percentage` in the run copy's `settings.non_persistent.tcl` (RM default 10). Lower = less leakage, higher = more timing headroom. Takes effect from compile. |
 | **Continue past DFT Rule S19** | off | The RM's `compile.tcl` **exits** when DFT DRC reports Rule S19 (nonscan cell disturb) — debug_module (5×) and trf_module (1×) both hit it. **On** = the run copy only warns, compile continues, and the S19 count shows in the compile gate. **Off** = RM behaviour (compile fails). |
 | **Start from** | build | `build` = new run. Any later step = **resume** an existing run (needs Run tag). |
 | **Stop after** | route_opt | Last step to run. |
@@ -148,7 +150,7 @@ All in `config/fixed.yaml` (a snapshot is stored in every `run.json`):
 | FC | `module load fc/2022.12-SP6`; license queuing on, wait ≤ 12 h (`SNPSLMD_QUEUE`, `SNPS_MAX_WAITTIME/QUEUETIME=43200`) |
 | Build env | `source $MIPS_HOME/raven/source_env.csh $MIPS_HOME/raven` (+ `IMGSITE=SC`) |
 | Build | `build.py ravenRTL -t <top> --configName <cfg> --workDirectory <cfg> -bt Synthesis -tech gf_22fdxp_9t_autopro150_9m_emram_stack -f <gf22 lvt std cells .v> -f <std_primitives.v>` |
-| TECH_DIR | `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack` |
+| TECH_DIR | from the **Technology node** field (default `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack`); the pairing tech dir ↔ `build.py -tech` lives in `config/fixed.yaml` → `tech_nodes` |
 | FC call | `fc_shell -f ../../scripts_block/rm_fc_scripts/<step>.tcl` in `<module>/rm_fc/tmp` (not `make`: its `\| tee` hides failures and it silently re-runs prerequisites) |
 | Tool environment | clean (`env -i`), started with `setsid` on the pd host → no DISPLAY, no stray variables |
 | Soft timeouts | per module size, e.g. S: compile 4 h, route_opt 4 h; L (corvi): compile 24 h. Counted from when fc_shell becomes **active** — time spent queueing for a license (up to 12 h) is not counted. |
@@ -159,6 +161,24 @@ All in `config/fixed.yaml` (a snapshot is stored in every `run.json`):
 | cic_module | cm3_cic | 2Core_4VC_32K_rvn_drive | 1.25 ns | cm3_cic.def |
 | debug_module | rvn_dbu_top_wrapper | 2Core_4VC_32K_rvn_drive | 2 ns | rvn_dbu_top_wrapper.def |
 | trf_module | rvn_mips_l2trf_top | 2Core_4VC_32K_rvn_drive | 1.25 ns | automatic |
+
+## 6b. Where the build data comes from
+
+1. **build_rtl** runs `build.py` from `<run>/rm_fc_cad/vbuild/` with `--workDirectory <build_config>` and the
+   `-tech` of the chosen technology node. It writes `<run>/rm_fc_cad/vbuild/<build_config>/vbuild/py.Work/
+   synthesis_rtl.f`, `synthesis_inc.f`, `synthesis_pkg.f` (Tcl lists of RTL files, include dirs, packages) plus
+   `build.log`, `build.info` and the generated headers under `vbuild/include/`.
+2. **fc_init_design** runs in `<run>/rm_fc_cad/<module>/rm_fc/tmp/`. The module's read script
+   (`block_files/common/<DESIGN>.FC.read_design.tcl`) first looks for an override
+   `$MIPS_HOME/../filelists/<module>_syn_rtl.tcl` (precheck warns if present), otherwise it sources
+   `../../../vbuild/$SYN_CONFIG/vbuild/py.Work/synthesis_{inc,rtl,pkg}.f` — i.e. **this run's build output**.
+   `SYN_CONFIG` is set by the flow to the build config, which is why the two must match (resolve_inputs enforces it).
+3. The RTL is read from the Perforce workspace paths listed in those filelists (`$MIPS_HOME/raven/src/...`), while
+   generated headers come from the run's own `vbuild/include/` copy (that is also where `rtl_fixes` are applied).
+
+Each step's log starts with a `pdflow: cores:` line (requested `max_cores`, host core count, tech, low-VT %), and the
+task log ends with `cores: requested …, FC applied set_host_options -max_cores N, timer threads N` read back from
+the FC log.
 
 ## 7. How a step is judged PASS / FAIL
 

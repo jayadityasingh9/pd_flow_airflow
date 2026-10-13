@@ -137,6 +137,9 @@ def make_module(tmp_path, module):
     (m / "scripts_block" / "rm_setup").mkdir(parents=True)
     shutil.copy(FIX / "setup" / f"{module}.design_setup.tcl", m / "block_files" / TECH / "design_setup.tcl")
     shutil.copy(FIX / "setup" / f"{module}.fc_setup.tcl", m / "scripts_block" / "rm_setup" / "fc_setup.tcl")
+    (m / "scripts_block" / "rm_fc_scripts").mkdir(parents=True, exist_ok=True)
+    shutil.copy(FIX / "setup" / f"{module}.settings.non_persistent.tcl",
+                m / "scripts_block" / "rm_fc_scripts" / "settings.non_persistent.tcl")
     return m
 
 
@@ -149,18 +152,20 @@ def test_patch_real_setups(tmp_path, module):
     ds = m / "block_files" / TECH / "design_setup.tcl"
     ds.chmod(0o444)                                          # like a Perforce file
     diff = tmp_path / "p.diff"
-    ch = patch.apply_patches(m, specs, {"clk": "0.9", "cores": 12}, diff)
-    assert {c["id"] for c in ch} == {"clk_period", "max_cores_design_setup", "max_cores_fc_setup"}
+    ch = patch.apply_patches(m, specs, {"clk": "0.9", "cores": 12, "low_vt": 25}, diff)
+    assert {c["id"] for c in ch} == {"clk_period", "max_cores_design_setup", "max_cores_fc_setup", "max_low_vt_pct"}
+    assert "set_multi_vth_constraint -low_vt_percentage 25\n" in \
+        (m / "scripts_block/rm_fc_scripts/settings.non_persistent.tcl").read_text()
     t = ds.read_text()
     assert "\nset Clk_period 0.9\n" in t and "set_host_options -max_cores 12" in t
     assert "set_host_options -max_cores 12" in (m / "scripts_block/rm_setup/fc_setup.tcl").read_text()
     assert diff.read_text().count("+set Clk_period 0.9") == 1
     # idempotent: same values again -> no new diff hunk
     before = diff.read_text()
-    patch.apply_patches(m, specs, {"clk": "0.9", "cores": 12}, diff)
+    patch.apply_patches(m, specs, {"clk": "0.9", "cores": 12, "low_vt": 25}, diff)
     assert diff.read_text() == before
     # values really change on re-patch
-    patch.apply_patches(m, specs, {"clk": "1.1", "cores": 4}, diff)
+    patch.apply_patches(m, specs, {"clk": "1.1", "cores": 4, "low_vt": 10}, diff)
     assert "\nset Clk_period 1.1\n" in ds.read_text()
 
 
@@ -172,10 +177,10 @@ def test_patch_refuses_ambiguous(tmp_path):
     ds.write_text(ds.read_text() + "\nset Clk_period 3\n")
     assert any("matches 2x" in p for p in patch.check_specs(m, specs))
     with pytest.raises(patch.PatchError, match="2x"):
-        patch.apply_patches(m, specs, {"clk": "1", "cores": 1}, tmp_path / "d")
+        patch.apply_patches(m, specs, {"clk": "1", "cores": 1, "low_vt": 10}, tmp_path / "d")
     ds.write_text("nothing here\n")
     with pytest.raises(patch.PatchError, match="0x"):
-        patch.apply_patches(m, specs, {"clk": "1", "cores": 1}, tmp_path / "d")
+        patch.apply_patches(m, specs, {"clk": "1", "cores": 1, "low_vt": 10}, tmp_path / "d")
 
 
 # --------------------------------------------------------------------------------- scripts
@@ -793,3 +798,50 @@ def test_silent_job_is_stopped_by_stall_timeout(monkeypatch, fixed):
     r = runner.run_or_reattach(fixed, c, "compile", "mipspd84", None, "a1", log=msgs.append,
                                poll_s=0, alive_every_s=1e9, stall_timeout_s=6 * 3600, license_wait_s=0)
     assert r.outcome == "timeout" and killed and any("no new output" in m for m in msgs)
+
+
+
+def test_optional_patch_skips_when_file_or_line_missing(tmp_path):
+    f = load_fixed()
+    specs = [s for s in patch.specs_from_fixed(f) if s.id == "max_low_vt_pct"]
+    m = tmp_path / "mod"
+    (m / "scripts_block" / "rm_fc_scripts").mkdir(parents=True)
+    assert patch.check_specs(m, specs) == []                                  # file absent: not an error
+    ch = patch.apply_patches(m, specs, {"low_vt": 5}, tmp_path / "d")
+    assert ch[0]["skipped"] == "file not present"
+    (m / "scripts_block/rm_fc_scripts/settings.non_persistent.tcl").write_text("# no vth line\n")
+    ch = patch.apply_patches(m, specs, {"low_vt": 5}, tmp_path / "d")
+    assert ch[0]["skipped"] == "line not present"
+
+
+def test_resolve_tech_node_and_low_vt(fixed):
+    c = ctx_for(fixed, module="corvi_module", tech_node="GF_22FDXP_6P75T_116A", max_low_vt_pct=20)
+    assert c["tech_dir"] == "GF_22FDXP_6P75T_116A" and c["build_tech"] == "gf_22fdxp_6p75t_116a"
+    assert c["max_low_vt_pct"] == 20
+    d = ctx_for(fixed)                                        # defaults
+    assert d["tech_dir"] == fixed["tech_dir"] and d["build_tech"] == fixed["build_tech"] and d["max_low_vt_pct"] == 10
+    with pytest.raises(context.InputError, match="has no block_files/GF_22FDXP_6P75T_116A"):
+        ctx_for(fixed, module="debug_module", tech_node="GF_22FDXP_6P75T_116A")
+    with pytest.raises(context.InputError, match="not configured"):
+        ctx_for(fixed, tech_node="TSMC_3NM")
+    with pytest.raises(context.InputError, match="0..100"):
+        ctx_for(fixed, max_low_vt_pct=150)
+    first = ctx_for(fixed, run_tag="r9", module="corvi_module", tech_node="GF_22FDXP_6P75T_116A")
+    _fake_run(fixed, "r9", first)
+    r = ctx_for(fixed, run_tag="r9", module="corvi_module", start_from="compile", tech_node="")
+    assert r["tech_dir"] == "GF_22FDXP_6P75T_116A"           # inherited on resume
+    with pytest.raises(context.InputError, match="different tech node needs a NEW run"):
+        ctx_for(fixed, run_tag="r9", module="corvi_module", start_from="compile", tech_node="GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack")
+    with pytest.raises(context.InputError, match="only takes effect from compile"):
+        ctx_for(fixed, run_tag="r9", module="corvi_module", start_from="route_auto", max_low_vt_pct=30)
+
+
+def test_scripts_carry_tech_and_cores_line(fixed):
+    c = ctx_for(fixed, module="corvi_module", tech_node="GF_22FDXP_6P75T_116A", max_cores=24)
+    Path(c["run_dir"]).mkdir(parents=True)
+    out = scripts.write_all(c, fixed)
+    assert "-tech gf_22fdxp_6p75t_116a" in Path(out["build"]).read_text()
+    env = Path(out["env_fc"]).read_text()
+    assert "setenv TECH_DIR    GF_22FDXP_6P75T_116A" in env
+    comp = Path(out["compile"]).read_text()
+    assert "pdflow: cores: requested max_cores 24" in comp and "TECH_DIR=GF_22FDXP_6P75T_116A" in comp

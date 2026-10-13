@@ -120,6 +120,36 @@ def resolve(params: dict, fixed: dict, now: str, dag_run_id: str, build_configs:
         errs.append(f"resume: clock {prev.get('clock_period_ns')} -> {clk} ns only takes effect from "
                     f"init_design (the SDC is read there); use start_from=init_design")
 
+    # --- technology node: form value, else the run's (resume), else the default; must exist for the module
+    nodes = fixed.get("tech_nodes") or {fixed["tech_dir"]: {"build_tech": fixed["build_tech"]}}
+    tech = p.get("tech_node") or prev.get("tech_dir") or fixed["tech_dir"]
+    if tech not in nodes:
+        errs.append(f"tech_node={tech!r} is not configured (config tech_nodes: {', '.join(nodes)})")
+    elif prev and tech != prev.get("tech_dir", fixed["tech_dir"]):
+        errs.append(f"resume: run {tag} uses technology {prev.get('tech_dir')}, not {tech} (a different tech "
+                    f"node needs a NEW run: start_from=build)")
+    elif not (Path(fixed["rm_fc_cad_src"]) / module / "block_files" / tech).is_dir():
+        have = sorted(d.name for d in (Path(fixed["rm_fc_cad_src"]) / module / "block_files").iterdir()
+                      if d.is_dir() and d.name not in ("common", "utils"))
+        errs.append(f"{module} has no block_files/{tech} (available for {module}: {', '.join(have)})")
+    build_tech = (nodes.get(tech) or {}).get("build_tech", fixed["build_tech"])
+
+    # --- max low-VT %: form value, else the run's (resume), else the RM default
+    if _blank(p.get("max_low_vt_pct")):
+        low_vt = int(prev.get("max_low_vt_pct") if prev.get("max_low_vt_pct") is not None else 10)
+    else:
+        try:
+            low_vt = int(p["max_low_vt_pct"])
+        except (TypeError, ValueError):
+            errs.append(f"max_low_vt_pct={p['max_low_vt_pct']!r} is not an integer")
+            low_vt = 10
+    if not 0 <= low_vt <= 100:
+        errs.append(f"max_low_vt_pct={low_vt} must be 0..100")
+    if prev and prev.get("max_low_vt_pct") is not None and low_vt != int(prev["max_low_vt_pct"]) \
+            and step_index(start) > step_index("compile"):
+        errs.append(f"resume: max_low_vt_pct {prev['max_low_vt_pct']} -> {low_vt} only takes effect from compile "
+                    f"(synthesis); use start_from=compile or earlier")
+
     if dry and is_resume:
         errs.append("dry_run is for NEW runs only (a dry resume would rewrite the existing run's state)")
 
@@ -154,7 +184,9 @@ def resolve(params: dict, fixed: dict, now: str, dag_run_id: str, build_configs:
         "is_resume": is_resume,
         "dag_run_id": dag_run_id,
         "size": mcfg.get("size", "L"),
-        "tech_dir": fixed["tech_dir"],
+        "tech_dir": tech,
+        "build_tech": build_tech,
+        "max_low_vt_pct": low_vt,
         "created": now,
     }
 

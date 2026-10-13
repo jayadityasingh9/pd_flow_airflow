@@ -40,6 +40,7 @@ from pdflow.workspace import (create_workspace, now_iso, open_existing, release_
 FIXED = load_fixed()
 BUILD_CONFIGS = list_build_configs(FIXED)          # dropdown suggestions (validated again at run time)
 MODS = FIXED["modules"]
+TECH_NODES = FIXED.get("tech_nodes") or {FIXED["tech_dir"]: {"label": "default"}}
 STEP_HELP = "build, init_design, compile, clock_opt_cts, clock_opt_opto, route_auto, route_opt"
 
 
@@ -64,7 +65,7 @@ PARAMS = {
     "module": Param(
         "", type="string", enum=[""] + list(MODS), title="Module (required)",
         values_display={"": "-- choose a module --",
-                        **{m: f"{m}  (top {c['design_name']}, size {c['size']})" for m, c in MODS.items()}},
+                        **{m: f"{m}  (top {c['design_name']})" for m, c in MODS.items()}},
         description="Picks DESIGN_NAME, top RTL file, default build config and default clock. "
                     "RESUME: choose the SAME module the run was made with (a different one is refused).",
         section="Where / what"),
@@ -72,6 +73,13 @@ PARAMS = {
         None, type=["null", "string"], title="Build config (-c / SYN_CONFIG)", examples=BUILD_CONFIGS,
         description="Blank = the module's default (corvi: 2Core_4VC_32K, others: 2Core_4VC_32K_rvn_drive). "
                     "Must be a directory in $MIPS_HOME/raven/src/config.",
+        section="Where / what"),
+    "tech_node": Param(
+        FIXED["tech_dir"], type="string", enum=list(TECH_NODES), title="Technology node",
+        values_display={k: f"{k}  —  {v.get('label', '')}" for k, v in TECH_NODES.items()},
+        description="RM technology dir (<module>/block_files/<TECH_DIR>) + the matching build.py -tech. Every "
+                    "module has the 9T eMRAM stack; corvi_module also has 6P75T, 6P75T_116A, 9T_AutoPro150 and "
+                    "SYN_5FF_6TMVT. A tech dir the module lacks is refused by resolve_inputs. Cannot change on resume.",
         section="Where / what"),
     "clock_period_ns": Param(
         None, type=["null", "number"], title="Clock period (ns)", exclusiveMinimum=0, maximum=20,
@@ -82,6 +90,12 @@ PARAMS = {
         16, type="integer", minimum=1, maximum=128, title="Max cores",
         description="set_host_options -max_cores for FC (patched in fc_setup.tcl + design_setup.tcl). "
                     "Must not exceed the chosen host's core count.",
+        section="Knobs"),
+    "max_low_vt_pct": Param(
+        10, type="integer", minimum=0, maximum=100, title="Max low-VT cells (%)",
+        description="Upper limit on low-VT (ULVT) cell usage: set_multi_vth_constraint -low_vt_percentage in the run "
+                    "copy's settings.non_persistent.tcl (RM default 10). Lower = less leakage, higher = more "
+                    "timing headroom. Takes effect from compile (synthesis) onwards.",
         section="Knobs"),
     "continue_past_s19": Param(
         False, type="boolean", title="Continue past DFT Rule S19",
@@ -138,8 +152,8 @@ def raven_pd_flow():
         except InputError as e:
             raise AirflowFailException("Please fix the trigger form:\n  - " + str(e).replace("\n", "\n  - "))
         print("Resolved run:")
-        for k in ("run_tag", "module", "design_name", "build_config", "clk_str", "max_cores", "fc_host",
-                  "start_from", "stop_at", "gates", "dry_run", "run_dir"):
+        for k in ("run_tag", "module", "design_name", "build_config", "tech_dir", "build_tech", "clk_str",
+                  "max_cores", "max_low_vt_pct", "fc_host", "start_from", "stop_at", "gates", "dry_run", "run_dir"):
             print(f"  {k:14} {ctx[k]}")
         return ctx
 
@@ -205,14 +219,18 @@ def raven_pd_flow():
                         m["steps"][s]["status"] = "stale"
             update_manifest(run_dir, _f)
 
-        changes = apply_patches(ctx["module_dir"], specs_from_fixed(FIXED),
-                                {"clk": ctx["clk_str"], "cores": ctx["max_cores"]},
+        changes = apply_patches(ctx["module_dir"], specs_from_fixed(FIXED, ctx["tech_dir"]),
+                                {"clk": ctx["clk_str"], "cores": ctx["max_cores"],
+                                 "low_vt": ctx.get("max_low_vt_pct", 10)},
                                 run_dir / "patches" / f"{ctx['module']}.diff")
         for t in toggles_from_fixed(FIXED):
             changes.append(apply_toggle(ctx["module_dir"], t, bool(ctx.get(t.param)),
                                         run_dir / "patches" / f"{ctx['module']}.diff"))
         for c in changes:
-            print(f"patch {c['id']}: {c['before'].strip()!r} -> {c['after'].strip()!r}  ({c['file']})")
+            if c.get("skipped"):
+                print(f"patch {c['id']}: SKIPPED ({c['skipped']}) in {c['file']}")
+            else:
+                print(f"patch {c['id']}: {c['before'].strip()!r} -> {c['after'].strip()!r}  ({c['file']})")
         scripts = write_all(ctx, FIXED)
         print(f"scripts in {run_dir / 'scripts'}: {', '.join(Path(p).name for p in scripts.values())}")
         update_manifest(run_dir, lambda m: m.update({"patches": changes, "scripts": scripts}))
