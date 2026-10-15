@@ -87,7 +87,7 @@ Unit tests: `bash -c 'source airflow/env.sh; airflow/venv/bin/python -m pytest -
 
 > 10-14: the corvi compile finished (rc 0, 41.3 h, graded WARN; setup WNS −0.86 ns); mipscs83's scheduler died the same
 > second (SQLite "database is locked"), so no `gate_compile` was created. Both mipscs instances were stopped on 10-14 and
-> **Airflow now runs on mipspd86** (tmux `pdflow`, UI 8081, fresh DB). The adopt sentence below was wrong for a different
+> **Airflow now runs on mipscs85** (since 10-15; tmux `pdflow`, UI 8081, fresh DB; mipspd86 hosted it on 10-14). The adopt sentence below was wrong for a different
 > host and is fixed in code (see §4); the current run continues with Start from = `clock_opt_cts` (compile is reused).
 
 
@@ -119,7 +119,7 @@ Unit tests: `bash -c 'source airflow/env.sh; airflow/venv/bin/python -m pytest -
 
 | Item | Status |
 |---|---|
-| Login servers freeze (mipscs82/83) → UI unreachable, scheduler dies (SQLite "database is locked" ×2), DAG "stale" (no Trigger button) | mitigated: 24 h task tokens, 200 missed heartbeats tolerated, 5 min DAG parse timeout, stale threshold 30 min, `doctor` flags paused/stale DAG, `start.sh` unpauses; **10-14: Airflow moved to mipspd86** (compute host, python3.11, 64 cores, 1 TB RAM, no login-host freezes) |
+| Login servers freeze (mipscs82/83) → UI unreachable, scheduler dies (SQLite "database is locked" ×2), DAG "stale" (no Trigger button) | mitigated: 24 h task tokens, 200 missed heartbeats tolerated, 5 min DAG parse timeout, stale threshold 30 min, `doctor` flags paused/stale DAG, `start.sh` unpauses; **10-14: Airflow moved to mipspd86; 10-15: to mipscs85** (64 cores, 1 TB RAM, python3.11) with `airflow/watchdog.sh` (cron) restarting it within 5 min if the scheduler dies again |
 | Resume on another host could not adopt a finished-but-ungraded step (it recompiled) | fixed 10-14: `runner.adoptable_result` + `prepare_workspace`; precheck warns when `start_from` would re-run a graded step |
 | Admin password file world-readable; two Airflows from one clone shared `airflow/home` | fixed 10-14: `start.sh` chmods it 600; `PDFLOW_INSTANCE` gives each instance its own dir; `doctor` checks both |
 | corvi RTL: `` `RVN_EXCTYPE_SIZE `` macro uses `$unsigned(...)` as a cast width → FC VER-294/260, 57 unbound modules | auto-fixed in the run's build output (`rtl_fixes` in fixed.yaml, applied at init_design, logged as "rtl fix … applied"). **Report upstream to RTL owners.** |
@@ -151,7 +151,7 @@ Next steps, in order (10-14 update: 2 is done — Airflow is on mipspd86, the mi
 1. corvi compile is done (WARN, setup WNS −0.86 ns). Review `pdflow.sh qor corvi_2Core_4VC_32K_20261006-232004`; to
    continue: `rm <run>/.pdflow.lock` (held by mipscs83's dead run), trigger same tag, Module corvi_module, **Start from =
    clock_opt_cts**, S19 knob ON → clock_opt_cts → opto → gate → route_auto → route_opt. First full corvi run.
-2. ~~Decide the Airflow host~~ done: mipspd86 (`tmux attach -t pdflow` there; tunnel `ssh -L 8081:127.0.0.1:8081 mipspd86`).
+2. ~~Decide the Airflow host~~ done: mipscs85 since 10-15 (`tmux attach -t pdflow` there; tunnel `ssh -L 8081:127.0.0.1:8081 mipscs85`; `airflow/watchdog.sh` keeps it up).
 3. Set `max_runtime_h` / sizes from real corvi runtimes; consider `max_route_opt_drcs`.
 4. Report the RTL macro and the S19 flops upstream.
 5. Hand colleagues `SHARING.md` (each runs their own copy; `pdflow.sh report <tag>` for bug reports).

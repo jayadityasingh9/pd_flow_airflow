@@ -52,7 +52,7 @@ def run_doctor(fixed: dict) -> Doctor:
     # --- local Airflow side
     py = Path(env.get("AF_BASE_PY", "/usr/bin/python3.11"))
     d.add(py.is_file(), "python 3.11 on this host", str(py),
-          "run Airflow on a host that has /usr/bin/python3.11 (mipspd86, mipspd81, mipscs82/83/85; NOT mipspd82)")
+          "run Airflow on a host that has /usr/bin/python3.11 (mipscs85, mipspd86, mipspd81, mipscs82/83; NOT mipspd82-85)")
     venv = Path(env.get("VENV", ROOT / "airflow" / "venv"))
     d.add((venv / "bin" / "airflow").is_file(), "Airflow installed (venv)", str(venv), "bash airflow/setup.sh")
     # a clone that is behind the shared repo misses fixes
@@ -123,6 +123,13 @@ def run_doctor(fixed: dict) -> Doctor:
                       "bash airflow/af.sh dags unpause raven_pd_flow   (a paused DAG queues runs forever)")
                 d.add(not row[1] or "warn", "DAG raven_pd_flow not stale", "stale" if row[1] else "fresh",
                       "the DAG reader stalled (busy host): restart Airflow")
+            c = sqlite3.connect(f"file:{dbf}?mode=ro", uri=True, timeout=5)
+            pools = dict(c.execute("select pool, slots from slot_pool").fetchall())
+            c.close()
+            missing = [p for p in ("pd_fc", "pd_build") if p not in pools]
+            d.add(not missing, "pools pd_fc / pd_build exist",
+                  ", ".join(f"{k}={pools[k]}" for k in ("pd_fc", "pd_build") if k in pools) or "none",
+                  "bash airflow/af.sh pools set pd_fc 2 x; bash airflow/af.sh pools set pd_build 2 x   (tasks in a missing pool are never scheduled)")
         except Exception as e:
             d.add("warn", "DAG raven_pd_flow", f"could not read the DB: {e}")
 

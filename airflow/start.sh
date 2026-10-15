@@ -11,14 +11,18 @@ source ./env.sh
 
 [ -x "$AIRFLOW_BIN" ] || { echo "FATAL: Airflow not installed yet -- run: bash setup.sh" >&2; exit 1; }
 
-# The metadata DB is node-local. A different host means a fresh (empty) DB: migrate it + pools.
+# The metadata DB is node-local. A different host means a fresh (empty) DB: migrate it.
 if [ ! -f "$AF_DB_DIR/airflow.db" ]; then
   echo "-- no metadata DB on $(hostname) yet: creating it (run history starts empty on this host)"
   "$AIRFLOW_BIN" db migrate
-  "$AIRFLOW_BIN" pools set pd_fc 2 "Concurrent Fusion Compiler steps" >/dev/null
-  "$AIRFLOW_BIN" pools set pd_build 2 "Concurrent pyBuildSim RTL builds" >/dev/null
   hostname > "$AF_DB_DIR/HOST"
 fi
+# The pools the DAG's tasks are bound to must exist in THIS DB, or those tasks are never scheduled
+# ("non-existent pool"). `pools set` is idempotent, so do it on every start (covers a DB that was created
+# some other way, e.g. by an `af.sh` command or an older setup.sh, and never got the pools).
+"$AIRFLOW_BIN" pools set pd_fc 2 "Concurrent Fusion Compiler steps (each ~16 cores + 1 FC license)" >/dev/null 2>&1 \
+  && "$AIRFLOW_BIN" pools set pd_build 2 "Concurrent pyBuildSim RTL builds" >/dev/null 2>&1 \
+  && echo "-- pools pd_fc=2, pd_build=2 ensured" || echo "-- WARNING: could not set pools (will retry once Airflow is up)"
 
 mkdir -p "$AIRFLOW_HOME"
 rm -f "$AIRFLOW_HOME/pdflow_shutdown"     # written by stop.sh; see PdStepOperator.on_kill
@@ -32,11 +36,15 @@ PW_FILE="$AIRFLOW_HOME/simple_auth_manager_passwords.json.generated"
     if [ -f "$PW_FILE" ]; then chmod 600 "$PW_FILE"; break; fi
   done ) &
 
-# Unpause raven_pd_flow once the DAG processor has registered it (a paused DAG queues runs forever).
+# Unpause raven_pd_flow once the DAG processor has registered it (a paused DAG queues runs forever),
+# and make sure the pools exist (second chance, in case the DB was still locked above).
 ( for i in $(seq 1 30); do
     sleep 20
     if "$AIRFLOW_BIN" dags unpause raven_pd_flow >/dev/null 2>&1; then
-      echo "start.sh: raven_pd_flow is unpaused"; break
+      echo "start.sh: raven_pd_flow is unpaused"
+      "$AIRFLOW_BIN" pools set pd_fc 2 "Concurrent Fusion Compiler steps (each ~16 cores + 1 FC license)" >/dev/null 2>&1
+      "$AIRFLOW_BIN" pools set pd_build 2 "Concurrent pyBuildSim RTL builds" >/dev/null 2>&1
+      break
     fi
   done ) &
 

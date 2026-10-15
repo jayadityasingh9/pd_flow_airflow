@@ -6,7 +6,7 @@
 > no pip, no venv copy; your settings live in `~/.pdflow/`). Nothing is opened to the internet, nothing runs
 > as somebody else, and every problem comes back as one `pdflow_report_*.tar.gz` file.
 > Code: `/home/jsingh9.scratch/mywork/pd_flow_airflow/` · clone from `/home/jsingh9.scratch/git/pd_flow_airflow.git`
-> · the owner's Airflow runs on **mipspd86** (since 2026-10-14).
+> · the owner's Airflow runs on **mipscs85** (since 2026-10-15).
 
 **Contents**
 1. [All the ways, compared](#1-all-the-ways-compared)
@@ -81,7 +81,7 @@ bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh doctor      # (o
 
 ### 3a. Way A′ — your own Airflow from the shared install (recommended, ~1 min)
 
-Use a compute host with python 3.11 and tmux (`mipspd86` or `mipspd81`). Commands are csh.
+Use a host with python 3.11 and tmux (`mipscs85`, `mipspd86`, `mipspd81`). Commands are csh.
 
 ```csh
 # 1. one-time: write ~/.pdflow/local.env (your ports, your instance dir, the shared venv) + ~/.pdflow/local.yaml,
@@ -225,12 +225,12 @@ overwritten (git-ignored).
 
 ```sh
 export AIRFLOW__API__HOST=0.0.0.0                                    # listen for other machines
-export AIRFLOW__API__BASE_URL=http://mipspd86.mipstec.com:8081       # links in the UI
+export AIRFLOW__API__BASE_URL=http://mipscs85.mipstec.com:8081       # links in the UI
 export AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS="admin:admin,alice:viewer,bob:user"
 ```
 
 Restart; passwords for each name are generated into `airflow/home/simple_auth_manager_passwords.json.generated`.
-Others open `http://mipspd86.mipstec.com:8081` (only if the network lets that port through).
+Others open `http://mipscs85.mipstec.com:8081` (only if the network lets that port through).
 Roles: **VIEWER** read-only, **USER** can trigger/clear runs, **OP** also pools/variables, **ADMIN**
 everything. Caveat: whatever anyone triggers runs **as the owner**, in the owner's scratch, with the
 owner's ssh keys and FC licenses — fine for a demo, not for testing.

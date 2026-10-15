@@ -8,12 +8,12 @@
 #   bash ui-tunnel.sh status
 #   bash ui-tunnel.sh stop      # close the tunnel
 #
-# Airflow host / port: PDFLOW_AIRFLOW_HOST (default mipspd86) and AIRFLOW_PORT from env.sh / local.env.
+# Airflow host / port: PDFLOW_AIRFLOW_HOST (default mipscs85; set it in local.env) and AIRFLOW_PORT from env.sh / local.env.
 # Needs passwordless ssh from this host to the Airflow host (same NFS home + ~/.ssh/authorized_keys).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/env.sh"
-AH="${PDFLOW_AIRFLOW_HOST:-mipspd86}"
+AH="${PDFLOW_AIRFLOW_HOST:-mipscs85}"
 PORT="$AIRFLOW_PORT"
 FWD="$PORT:127.0.0.1:$PORT"
 TAG="# pdflow-ui-tunnel $HERE"

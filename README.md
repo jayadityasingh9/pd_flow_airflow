@@ -24,19 +24,20 @@
 
 ## 1. Start / stop Airflow
 
-Airflow runs on the host where you start it (since 2026-10-14: **mipspd86**, a compute host; the login servers
-mipscs82/83 froze under load and their SQLite scheduler died twice). Its metadata DB is **node-local**
+Airflow runs on the host where you start it (since 2026-10-15: **mipscs85**, 64 cores / 1 TB RAM, python3.11; it ran on
+mipspd86 on 10-14, and before that on mipscs82/83, whose SQLite scheduler died twice under login-server load -- the
+`watchdog.sh` cron now restarts it within 5 min if that happens again). Its metadata DB is **node-local**
 (`/var/tmp/<user>_pdflow_airflow_db`), so always start it on the same host; on a new host `start.sh` creates an
 empty DB (runs on disk are unaffected and can be resumed from their `run.json`).
 
 ```csh
 # start (inside tmux so it survives logout; FC runs take hours)
-ssh mipspd86
+ssh mipscs85
 tmux new -s pdflow 'bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/start.sh'
 #   detach: Ctrl-b d      re-attach: tmux attach -t pdflow
 
 # on your laptop: tunnel, then open http://127.0.0.1:<port>  (owner: 8081; others: 20000 + uid % 20000, printed by start.sh)
-ssh -L 8081:127.0.0.1:8081 jsingh9@mipspd86.mipstec.com
+ssh -L 8081:127.0.0.1:8081 jsingh9@mipscs85.mipstec.com
 #   user: admin   password: cat <instance>/simple_auth_manager_passwords.json.generated   (instance = airflow/home, or $PDFLOW_INSTANCE)
 
 # status / stop
@@ -53,7 +54,7 @@ Airflow host adds a cron check every 5 min (+ after reboot) that restarts Airflo
 is down or any component is unhealthy (the SQLite "database is locked" scheduler death, a host reboot).
 `watchdog.sh status|off|on|remove`. **Reach the UI from Windows:** your browser needs an ssh tunnel that ends
 on the Airflow host. From a Linux gateway (mipsvgw8x) `bash airflow/ui-tunnel.sh ensure` opens (once)
-`127.0.0.1:8081 -> mipspd86:8081`; `ui-tunnel.sh install` keeps it alive via cron on that gateway. Then a
+`127.0.0.1:8081 -> <Airflow host>:8081` (`PDFLOW_AIRFLOW_HOST` in local.env, now mipscs85); `ui-tunnel.sh install` keeps it alive via cron on that gateway. Then a
 PuTTY/PowerShell tunnel from Windows to the gateway (`-L 8081:127.0.0.1:8081`) makes `http://localhost:8081`
 work in the Windows browser.
 

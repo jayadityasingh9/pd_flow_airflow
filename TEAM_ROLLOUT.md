@@ -224,12 +224,12 @@ team (today `pd_fc=2`, `pd_build=2`, `parallelism=8`, `max_active_runs=4`); `run
 
 ## Part D — Operator runbook for the next hours
 
-### D.1 Continue the corvi run (Airflow is on mipspd86 with a fresh DB; mipscs83's run is gone)
+### D.1 Continue the corvi run (Airflow is on mipscs85 with a fresh DB; mipscs83's run is gone)
 
 ```csh
 bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh qor corvi_2Core_4VC_32K_20261006-232004   # decide: WNS -0.86, hold -0.659
 rm /home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261006-232004/.pdflow.lock     # held by mipscs83's dead run
-ssh -f -N -L 8081:127.0.0.1:8081 mipspd86        # UI http://127.0.0.1:8081 -> raven_pd_flow -> Trigger:
+ssh -f -N -L 8081:127.0.0.1:8081 mipscs85        # UI http://127.0.0.1:8081 -> raven_pd_flow -> Trigger:
 #   Module corvi_module · Run tag corvi_2Core_4VC_32K_20261006-232004 · Start from = clock_opt_cts · pd host mipspd81
 #   Max cores 16 · Clock blank (1.25 inherited) · Continue past S19 ON · gates on
 ```
@@ -244,16 +244,16 @@ after it use start_from=clock_opt_cts" — it would recompile, because the resul
 rm -rf /home/jsingh9.scratch/raven_local_ws/corvi_rvn_inova_20261001-012905 /home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261005-015151
 ```
 
-### D.3 The Airflow host is mipspd86 (keep-alive + Windows access)
+### D.3 The Airflow host is mipscs85 since 10-15 (keep-alive + Windows access)
 ```csh
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/watchdog.sh install    # on mipspd86: cron restarts Airflow if down/unhealthy
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/ui-tunnel.sh install   # on your gateway (mipsvgw8x): keeps 127.0.0.1:8081 -> mipspd86 alive
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/watchdog.sh install    # on mipscs85: cron restarts Airflow if down/unhealthy
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/ui-tunnel.sh install   # on your gateway (mipsvgw8x): keeps 127.0.0.1:8081 -> mipscs85 alive
 # Windows: PuTTY/PowerShell tunnel to the gateway with -L 8081:127.0.0.1:8081, then http://localhost:8081
 ```
 ```csh
-ssh mipspd86; tmux attach -t pdflow                      # Ctrl-b d to detach; bash airflow/stop.sh to stop
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/status.sh      # on mipspd86
-ssh -f -N -L 8081:127.0.0.1:8081 mipspd86                # from your desktop; admin / password in airflow/home/...generated
+ssh mipscs85; tmux attach -t pdflow                      # Ctrl-b d to detach; bash airflow/stop.sh to stop
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/status.sh      # on mipscs85
+ssh -f -N -L 8081:127.0.0.1:8081 mipscs85                # from your desktop; admin / password in airflow/home/...generated
 ```
 The old run history stays in mipscs83's `/var/tmp/jsingh9_pdflow_airflow_db` (ages out after 30 idle days); every run
 dir has its `run.json`, and `pdflow.sh list|status|qor` read those.
