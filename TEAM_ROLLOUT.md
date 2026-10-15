@@ -224,7 +224,13 @@ team (today `pd_fc=2`, `pd_build=2`, `parallelism=8`, `max_active_runs=4`); `run
 
 ## Part D — Operator runbook for the next hours
 
-### D.1 Continue the corvi run (Airflow is on mipscs85 with a fresh DB; mipscs83's run is gone)
+### D.1 Continue the corvi run — DONE 2026-10-15 03:35 PDT
+Triggered from mipscs85 (`af.sh dags trigger`): same tag, Start from = clock_opt_cts, **host mipspd84** (mipspd81 had only
+102 GB free RAM; precheck demands 200 GB for corvi), S19 knob on, gates on. compile REUSED (warn), gate_compile
+auto-approved (past start_from), `fc_clock_opt_cts` launched on mipspd84 session 1432873. Next human stop: **gate_clock_opt**
+after clock_opt_opto (UI → Required Actions, or `pdflow.sh gates` / `approve`). The old lock was backed up as
+`.pdflow.lock.mipscs83-*.bak` in the run dir. The original recipe, for reference:
+
 
 ```csh
 bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh qor corvi_2Core_4VC_32K_20261006-232004   # decide: WNS -0.86, hold -0.659
