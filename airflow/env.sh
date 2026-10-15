@@ -62,14 +62,26 @@ export AIRFLOW__CORE__DAGS_FOLDER="$HERE/dags"
 export AIRFLOW__CORE__LOAD_EXAMPLES="False"
 # A fresh DB would create the DAG PAUSED: triggered runs then sit "queued" forever.
 export AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION="False"
-export AIRFLOW__CORE__PARALLELISM="8"
+# --- Footprint on a shared host (measured 2026-10-15 on mipscs85 with the defaults: 20 processes, 2.3 GB RSS,
+# ~2.4 % of one core idle). LocalExecutor pre-forks PARALLELISM idle workers (~130 MB each): 6 is plenty
+# (pools allow 2 FC + 2 build tool steps at once; setup tasks are seconds; gates wait in the triggerer).
+export AIRFLOW__CORE__PARALLELISM="${AIRFLOW__CORE__PARALLELISM:-6}"
+# scheduler: sleep 5 s between idle loops instead of 1 s (nothing here is time-critical at the second level)
+export AIRFLOW__SCHEDULER__SCHEDULER_IDLE_SLEEP_TIME="${AIRFLOW__SCHEDULER__SCHEDULER_IDLE_SLEEP_TIME:-5}"
+# one DAG file: one parser process, re-parsed every 2 min (code changes still land within 2 min)
+export AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES="1"
+export AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL="600"
+# one API worker is enough for a handful of users
+export AIRFLOW__API__WORKERS="${AIRFLOW__API__WORKERS:-1}"
+# start.sh runs `airflow standalone` under nice 10 / best-effort low I/O priority (PDFLOW_NICE to change)
+export PDFLOW_NICE="${PDFLOW_NICE:-10}"
 # DAG parsing on a loaded host: normal parse is ~1.5 s, but frozen login servers took 50 s and hit
 # the 50 s processor timeout -> DAG marked stale -> no Trigger button. Give it room, and do not
 # mark the DAG stale after one slow/killed parse.
 export AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT="240"
 export AIRFLOW__DAG_PROCESSOR__DAG_FILE_PROCESSOR_TIMEOUT="300"
 export AIRFLOW__DAG_PROCESSOR__STALE_DAG_THRESHOLD="1800"
-export AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL="60"
+export AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL="120"
 # Long FC steps: be generous before declaring a task's heartbeat lost.
 # 20 min: survives the ~10 min host freezes seen, yet a task orphaned by an Airflow restart is
 # noticed (and retried -> re-attaches to its still-running FC job) within 20 min.

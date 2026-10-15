@@ -52,11 +52,17 @@ finished meanwhile).
 **Keep it running without you** (optional, per host, no root): `bash airflow/watchdog.sh install` on the
 Airflow host adds a cron check every 5 min (+ after reboot) that restarts Airflow when its health endpoint
 is down or any component is unhealthy (the SQLite "database is locked" scheduler death, a host reboot).
-`watchdog.sh status|off|on|remove`. **Reach the UI from Windows:** your browser needs an ssh tunnel that ends
-on the Airflow host. From a Linux gateway (mipsvgw8x) `bash airflow/ui-tunnel.sh ensure` opens (once)
-`127.0.0.1:8081 -> <Airflow host>:8081` (`PDFLOW_AIRFLOW_HOST` in local.env, now mipscs85); `ui-tunnel.sh install` keeps it alive via cron on that gateway. Then a
-PuTTY/PowerShell tunnel from Windows to the gateway (`-L 8081:127.0.0.1:8081`) makes `http://localhost:8081`
-work in the Windows browser.
+`watchdog.sh status|off|on|remove`.
+
+**Reach the UI from Windows: one direct tunnel to the Airflow host, no gateway.** PowerShell:
+`ssh -N -L 8081:127.0.0.1:8081 jsingh9@mipscs85.mipstec.com` (leave the window open), then
+`http://localhost:8081`. PuTTY: in the mipscs85 session, Connection → SSH → Tunnels, source `8081`,
+destination `127.0.0.1:8081`. Only if your PC cannot ssh to the Airflow host directly, `airflow/ui-tunnel.sh`
+can relay through a Linux gateway instead.
+
+**Footprint on the shared host** (`env.sh`, `start.sh`): 6 executor workers, 1 API worker, 1 DAG parser every
+2 min, 5 s scheduler idle sleep, and everything under `nice 10` / low I/O priority, so interactive users and
+EDA jobs on the same machine always come first. Measured idle on mipscs85: 18 processes, ~2.0 GB RSS, ~2 % of one core.
 
 Ports: the owner's copy keeps **8081** (`airflow/local.env`; the older freq_hist Airflow uses 8080); every other user
 gets `20000 + uid % 20000` (+1/+2 for the log servers). One-time install was `bash airflow/setup.sh`; a user of a

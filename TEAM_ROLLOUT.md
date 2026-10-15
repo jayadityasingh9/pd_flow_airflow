@@ -244,12 +244,13 @@ after it use start_from=clock_opt_cts" — it would recompile, because the resul
 rm -rf /home/jsingh9.scratch/raven_local_ws/corvi_rvn_inova_20261001-012905 /home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261005-015151
 ```
 
-### D.3 The Airflow host is mipscs85 since 10-15 (keep-alive + Windows access)
+### D.3 The Airflow host is mipscs85 since 10-15 (keep-alive + Windows access, no gateway)
 ```csh
 bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/watchdog.sh install    # on mipscs85: cron restarts Airflow if down/unhealthy
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/ui-tunnel.sh install   # on your gateway (mipsvgw8x): keeps 127.0.0.1:8081 -> mipscs85 alive
-# Windows: PuTTY/PowerShell tunnel to the gateway with -L 8081:127.0.0.1:8081, then http://localhost:8081
+# Windows PowerShell (direct):  ssh -N -L 8081:127.0.0.1:8081 jsingh9@mipscs85.mipstec.com   -> http://localhost:8081
+# (airflow/ui-tunnel.sh relays via a Linux gateway only if direct ssh to mipscs85 is blocked from your PC)
 ```
+Airflow runs under `nice 10` + low I/O priority with 6 executor workers, 1 API worker and a 2-min DAG parse (env.sh): 18 processes, ~2.0 GB RSS, ~2 % of one core idle.
 ```csh
 ssh mipscs85; tmux attach -t pdflow                      # Ctrl-b d to detach; bash airflow/stop.sh to stop
 bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/status.sh      # on mipscs85

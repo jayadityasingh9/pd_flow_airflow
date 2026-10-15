@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Keep an ssh tunnel  127.0.0.1:<port> (this host)  ->  127.0.0.1:<port> (the Airflow host)  alive,
-# so a browser on THIS machine, or a Windows PuTTY/ssh tunnel that lands here, reaches the Airflow UI.
+# OPTIONAL relay, only when your PC cannot ssh to the Airflow host directly (the normal way is one direct
+# tunnel: ssh -N -L 8081:127.0.0.1:8081 <you>@mipscs85). Keeps an ssh tunnel 127.0.0.1:<port> (this host) ->
+# 127.0.0.1:<port> (the Airflow host) alive, so a Windows tunnel that lands on THIS host reaches the UI.
 #
 #   bash ui-tunnel.sh ensure    # open the tunnel if it is not there (idempotent; what cron runs)
 #   bash ui-tunnel.sh install   # cron on this host: 'ensure' every 5 min (+ after reboot)

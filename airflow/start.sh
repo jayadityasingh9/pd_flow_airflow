@@ -59,4 +59,10 @@ echo "  metadata DB  = $AF_DB_DIR/airflow.db"
 echo "  tunnel       : ssh -L ${AIRFLOW_PORT}:127.0.0.1:${AIRFLOW_PORT} ${USER}@$(hostname -f)"
 echo "  UI           : http://127.0.0.1:${AIRFLOW_PORT}   (user admin; password in $AIRFLOW_HOME/simple_auth_manager_passwords.json.generated)"
 echo "  Ctrl-C to stop. FC jobs already running on the pd hosts are NOT stopped by this."
-exec "$AIRFLOW_BIN" standalone
+# Low priority on a shared host: CPU nice ${PDFLOW_NICE:-10}, best-effort I/O class 7. Every child
+# (scheduler, dag-processor, triggerer, API, executor workers, task runners) inherits it; interactive
+# users and EDA jobs on this host always come first. The FC steps run on the pd hosts, unaffected.
+NICE_CMD="nice -n ${PDFLOW_NICE:-10}"
+command -v ionice >/dev/null 2>&1 && NICE_CMD="$NICE_CMD ionice -c 2 -n 7"
+echo "  priority     : $NICE_CMD"
+exec $NICE_CMD "$AIRFLOW_BIN" standalone
