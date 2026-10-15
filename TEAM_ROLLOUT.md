@@ -244,7 +244,12 @@ after it use start_from=clock_opt_cts" — it would recompile, because the resul
 rm -rf /home/jsingh9.scratch/raven_local_ws/corvi_rvn_inova_20261001-012905 /home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261005-015151
 ```
 
-### D.3 The Airflow host is mipspd86
+### D.3 The Airflow host is mipspd86 (keep-alive + Windows access)
+```csh
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/watchdog.sh install    # on mipspd86: cron restarts Airflow if down/unhealthy
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/ui-tunnel.sh install   # on your gateway (mipsvgw8x): keeps 127.0.0.1:8081 -> mipspd86 alive
+# Windows: PuTTY/PowerShell tunnel to the gateway with -L 8081:127.0.0.1:8081, then http://localhost:8081
+```
 ```csh
 ssh mipspd86; tmux attach -t pdflow                      # Ctrl-b d to detach; bash airflow/stop.sh to stop
 bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/status.sh      # on mipspd86

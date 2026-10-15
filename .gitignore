@@ -8,3 +8,6 @@ __pycache__/
 .pytest_cache/
 tests/smoke_*.log
 tests/_*/
+airflow/venv.new/
+airflow/python/
+airflow/*.tgz

@@ -48,6 +48,15 @@ Stopping Airflow does **not** stop FC jobs: they run detached on the pd host. Af
 **Clear** the running task in the UI and it re-attaches to the job (or picks up its result if it
 finished meanwhile).
 
+**Keep it running without you** (optional, per host, no root): `bash airflow/watchdog.sh install` on the
+Airflow host adds a cron check every 5 min (+ after reboot) that restarts Airflow when its health endpoint
+is down or any component is unhealthy (the SQLite "database is locked" scheduler death, a host reboot).
+`watchdog.sh status|off|on|remove`. **Reach the UI from Windows:** your browser needs an ssh tunnel that ends
+on the Airflow host. From a Linux gateway (mipsvgw8x) `bash airflow/ui-tunnel.sh ensure` opens (once)
+`127.0.0.1:8081 -> mipspd86:8081`; `ui-tunnel.sh install` keeps it alive via cron on that gateway. Then a
+PuTTY/PowerShell tunnel from Windows to the gateway (`-L 8081:127.0.0.1:8081`) makes `http://localhost:8081`
+work in the Windows browser.
+
 Ports: the owner's copy keeps **8081** (`airflow/local.env`; the older freq_hist Airflow uses 8080); every other user
 gets `20000 + uid % 20000` (+1/+2 for the log servers). One-time install was `bash airflow/setup.sh`; a user of a
 shared install runs `bash bin/pdflow-user-setup.sh` instead (see `SHARING.md`).
