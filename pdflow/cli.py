@@ -100,8 +100,11 @@ GATE_TASKS = {"gate_compile": "compile", "gate_clock_opt": "clock_opt_opto"}
 def _api():
     import os
     import urllib.request
-    base = os.environ.get("AIRFLOW__API__BASE_URL", "http://127.0.0.1:8081").rstrip("/")
-    home = os.environ.get("AIRFLOW_HOME", str(Path(__file__).resolve().parent.parent / "airflow" / "home"))
+    # bin/pdflow.sh sources airflow/env.sh, so these are normally set; the fallbacks mirror env.sh.
+    port = os.environ.get("AIRFLOW_PORT") or str(20000 + os.getuid() % 20000)
+    base = os.environ.get("AIRFLOW__API__BASE_URL", f"http://127.0.0.1:{port}").rstrip("/")
+    home = os.environ.get("AIRFLOW_HOME") or os.environ.get("PDFLOW_INSTANCE") \
+        or str(Path(__file__).resolve().parent.parent / "airflow" / "home")
     pw_file = Path(home) / "simple_auth_manager_passwords.json.generated"
     try:
         pw = json.loads(pw_file.read_text())["admin"]

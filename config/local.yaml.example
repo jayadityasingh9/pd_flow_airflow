@@ -1,5 +1,6 @@
-# Copy to config/local.yaml (git-ignored). Only the keys you change; everything else comes from
-# config/fixed.yaml. ${USER} / ${HOME} and ${other_key} are expanded.
+# Copy to config/local.yaml (your own clone) or ~/.pdflow/local.yaml (a user of a SHARED install; wins).
+# Only the keys you change; everything else comes from config/fixed.yaml. ${USER} / ${HOME} and
+# ${other_key} are expanded.
 
 # Where your runs go (default /home/${USER}.scratch/raven_local_ws):
 #runs_root: /home/${USER}.scratch/raven_local_ws

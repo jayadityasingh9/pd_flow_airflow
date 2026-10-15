@@ -1,10 +1,12 @@
 # Sharing raven_pd_flow — how colleagues can try it, test it and report errors
 
-> **Short answer:** each tester **clones the code and runs their own copy** under their own
-> account (about 20 minutes to set up). Nothing is opened to the internet, nothing runs as somebody
-> else, and every problem comes back as one `pdflow_report_*.tar.gz` file.
-> Code: `/home/jsingh9.scratch/mywork/pd_flow_airflow/` · clone from
-> `/home/jsingh9.scratch/git/pd_flow_airflow.git`
+> **Short answer:** each person runs **their own Airflow instance under their own account** — either from
+> their own clone (way A, ~20 min, needs internet for `pip`) or, simpler, straight from the owner's install
+> with `bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow-user-setup.sh` (way A′, 1 min: no clone,
+> no pip, no venv copy; your settings live in `~/.pdflow/`). Nothing is opened to the internet, nothing runs
+> as somebody else, and every problem comes back as one `pdflow_report_*.tar.gz` file.
+> Code: `/home/jsingh9.scratch/mywork/pd_flow_airflow/` · clone from `/home/jsingh9.scratch/git/pd_flow_airflow.git`
+> · the owner's Airflow runs on **mipspd86** (since 2026-10-14).
 
 **Contents**
 1. [All the ways, compared](#1-all-the-ways-compared)
@@ -21,7 +23,8 @@
 
 | | Way | What it needs | Good for | Verdict |
 |---|---|---|---|---|
-| **A** | **Each tester runs their own copy** (git clone → `setup.sh` → `start.sh` → ssh tunnel) | a MIPS Linux account, passwordless ssh to mipspd81-85, `module load fc` working, ~1.5 GB for the install + 50-150 GB for runs | real testing: runs use *their* account, licenses, scratch | **Recommended** |
+| **A′** | **Own Airflow from the shared install** (`bin/pdflow-user-setup.sh` → `start.sh` → ssh tunnel) | a MIPS Linux account, passwordless ssh to mipspd81-85, `module load fc` working, 50-150 GB for runs | real testing: runs use *their* account, licenses, scratch; no install step, always the current code | **Recommended** |
+| **A** | **Each tester runs their own clone** (git clone → `setup.sh` → `start.sh` → ssh tunnel) | as A′ plus internet access for `pip` and ~300 MB for the venv | the same, plus hacking on the code | fine for developers |
 | **B** | Open one Airflow on the intranet (`AIRFLOW__API__HOST=0.0.0.0`, a login per person) | the host's port reachable from other machines; a role per person (VIEWER / USER / OP / ADMIN) | showing the UI, watching runs | demo only — every FC job runs **as the owner** (`jsingh9`), in the owner's scratch, with the owner's ssh keys |
 | **C** | ssh tunnel to the owner's Airflow, using the owner's login | ssh to the Airflow host | a quick look | same caveat as B, and one shared password |
 | **D** | IT-hosted team service (service account, Postgres, company SSO via the FAB auth provider, HTTPS reverse proxy, worker hosts) | IT + security review, a service account with FC access | a permanent team tool | later, if the team adopts it |
@@ -57,25 +60,52 @@ flowchart LR
 | Need | Why | How to check / fix |
 |---|---|---|
 | A MIPS Linux account with a scratch area (`/home/<you>.scratch`) | runs (copies of rm_fc_cad, nlib, reports) go there | `ls -d /home/$USER.scratch` |
-| A login host with `/usr/bin/python3.11` | Airflow runs on it (mipscs82, mipscs83, mipscs85 and mipspd81 have it) | `ls /usr/bin/python3.11` |
+| A host with `/usr/bin/python3.11` and tmux | Airflow runs on it. **Prefer a compute host** (mipspd86, mipspd81): the login servers mipscs82/83 freeze under load and killed the scheduler twice. mipspd82 has no python3.11 | `ls /usr/bin/python3.11` |
 | **Passwordless ssh** from that host to mipspd81 … mipspd85 | every build/FC step is started there over ssh | `ssh -o BatchMode=yes mipspd81 hostname` — if it asks for a password: `ssh-keygen -t ed25519` (Enter ×3) then `cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys`; ssh once to each host by hand to accept its key |
 | `module load fc/2022.12-SP6` works for you on the pd hosts | the FC steps use it | `doctor` checks it |
 | Read access to a Raven Perforce workspace | the flow copies `rm_fc_cad` and reads the RTL | default is `/home/jsingh9/Perforce/jsingh9_raven_ws2` (readable by everyone); set your own in `config/local.yaml` |
-| Disk: ~1.5 GB for the install, ≥ 50 GB for runs (corvi: ~150 GB) | | `doctor` shows free space |
+| Disk: ≥ 50 GB for runs (corvi: ~150 GB; a corvi run dir is 5-8 GB); way A also ~300 MB for the venv | | `doctor` shows free space |
 | An ssh tunnel from your desktop / VNC / laptop to the login host | the UI only listens on the login host itself | printed by `start.sh` |
 
 **One command checks all of it:**
 
 ```csh
-bash /home/$USER.scratch/pd_flow_airflow/bin/pdflow.sh doctor
-#   expect: "17 checks: 17 PASS, 0 WARN, 0 FAIL" -- every FAIL line says how to fix it
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh doctor      # (or your clone's bin/pdflow.sh)
+#   before you start Airflow:  "... 0 FAIL" with 2-3 WARN (not running / DAG not registered / log ports) is normal
+#   with Airflow running:      "N checks: N PASS, 0 WARN, 0 FAIL" -- every FAIL line says how to fix it
 ```
 
 ---
 
-## 3. Step by step (the recommended way)
+## 3. Step by step
 
-Use a login host with python 3.11 (e.g. `mipscs83`). Commands are csh.
+### 3a. Way A′ — your own Airflow from the shared install (recommended, ~1 min)
+
+Use a compute host with python 3.11 and tmux (`mipspd86` or `mipspd81`). Commands are csh.
+
+```csh
+# 1. one-time: write ~/.pdflow/local.env (your ports, your instance dir, the shared venv) + ~/.pdflow/local.yaml,
+#    then run doctor. Re-run any time; it keeps your files (--force rewrites them).
+bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow-user-setup.sh
+
+# 2. (optional) edit ~/.pdflow/local.yaml: mips_home = your own Perforce workspace, runs_root, fc_hosts
+
+# 3. start YOUR Airflow (inside tmux so it keeps running after you log out)
+tmux new -s pdflow 'bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/start.sh'
+#    it prints your port (20000 + uid % 20000), the tunnel command and where the password is.
+#    detach: Ctrl-b d      back: tmux attach -t pdflow
+
+# 4. on the machine with your browser (VNC desktop, or Windows PowerShell):
+ssh -f -N -L <port>:127.0.0.1:<port> <that host>
+#    open http://127.0.0.1:<port>   user: admin   password: cat ~/.pdflow/home/simple_auth_manager_passwords.json.generated
+```
+
+What is yours: the Airflow processes, port, metadata DB (`/var/tmp/<you>_pdflow_airflow_db` on that host), instance
+dir `~/.pdflow/home` (airflow.cfg, task logs, password), runs under `/home/<you>.scratch/raven_local_ws/`. What is
+shared and read-only for you: the code, the venv, `config/fixed.yaml`. `git pull` by the owner updates everyone's
+code at the next DAG parse (≤ 1 min); restart your Airflow after a pull that changes `env.sh`.
+
+### 3b. Way A — your own clone (developers)
 
 ```csh
 # 1. get the code (into your own home or scratch)
@@ -87,21 +117,20 @@ cd pd_flow_airflow
 cp config/local.yaml.example config/local.yaml      # e.g. mips_home: your own Perforce workspace
 cp airflow/local.env.example airflow/local.env      # e.g. a fixed port, or VENV=<shared venv>
 
-# 3. install Airflow (once, ~5 min, ~1 GB). Shortcut: put
+# 3. install Airflow (once, ~5 min, ~300 MB; needs PyPI + raw.githubusercontent.com). Shortcut: put
 #    export VENV=/home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/venv   in airflow/local.env
 #    to reuse the owner's install instead (read-only).
 bash airflow/setup.sh
 
-# 4. check everything
+# 4. check everything (2-3 WARN before Airflow runs is normal)
 bash bin/pdflow.sh doctor
 
 # 5. start Airflow (inside tmux so it keeps running after you log out)
 tmux new -s pdflow 'bash /home/'$USER'.scratch/pd_flow_airflow/airflow/start.sh'
-#    it prints YOUR port (20000 + uid % 20000), the tunnel command and where the password is.
 #    detach: Ctrl-b d      back: tmux attach -t pdflow
 
 # 6. on the machine with your browser (VNC desktop, or Windows PowerShell):
-ssh -f -N -L <port>:127.0.0.1:<port> <login-host>
+ssh -f -N -L <port>:127.0.0.1:<port> <host>
 #    open http://127.0.0.1:<port>   user: admin
 #    password: cat /home/$USER.scratch/pd_flow_airflow/airflow/home/simple_auth_manager_passwords.json.generated
 ```
@@ -136,7 +165,8 @@ The bundle contains `summary.md`, `run.json`, `patches/`, `status/`, `qor/`, the
 that run, the last 300 lines of each FC/build log, `doctor` output and the code version (git commit).
 
 If Airflow itself misbehaves (no Trigger button, nothing starts), also send the output of
-`bash airflow/status.sh` and the last 200 lines of `airflow/standalone.<host>.log`.
+`bash airflow/status.sh` and the last 200 lines of the tmux window (`tmux attach -t pdflow`; or start Airflow as
+`tmux new -s pdflow "bash -c 'bash .../airflow/start.sh 2>&1 | tee -a .../airflow/standalone.$HOST.log'"` to keep a log file).
 
 ---
 
@@ -152,7 +182,8 @@ If Airflow itself misbehaves (no Trigger button, nothing starts), also send the 
 | compile FAILS with *"Rule S19 violation exists and hence exiting"* | the RM stops on DFT Rule S19 (debug, trf hit it) | trigger again: same Run tag, **Start from** `compile`, **Continue past DFT Rule S19** on |
 | corvi init_design: VER-294 / VER-260, 57 unbound modules | an RTL macro FC can't parse (`RVN_EXCTYPE_SIZE`) | fixed automatically in the run copy (`rtl_fixes` in `config/fixed.yaml`); log shows *"rtl fix … applied"* |
 | *"Host key verification failed"* | first ssh to that host under that name | `ssh <host>` once by hand and answer `yes` (use short names: `mipspd81`) |
-| precheck: *"locked by Airflow run …"* | a previous run of the same tag is still active | finish/mark it failed first; a finished run's lock is taken over automatically |
+| precheck: *"locked by Airflow run … on host X"* | a previous run of the same tag is still active, or it ran under an Airflow on another host (whose DB cannot be consulted) | same host: finish/mark it failed first (a finished run's lock is taken over automatically); other host: `rm <run>/.pdflow.lock` as the message says |
+| precheck WARN *"start_from=X RE-RUNS that step"* | you resumed *at* a step that already finished and was graded | use Start from = the next step, unless you really want to redo it |
 | *"run … is X, not Y"* on resume | the Module must be the run's own module | pick the same module as the run |
 | precheck WARN *"host busy"* / *"wants >= N GB RAM"* | the pd host is loaded | pick another pd host (doctor shows load and free RAM of all five) |
 | port already in use / tunnel fails | someone uses your port | set `AIRFLOW_PORT` in `airflow/local.env`, restart |
@@ -180,24 +211,26 @@ overwritten (git-ignored).
 | Owner's working copy | `/home/jsingh9.scratch/mywork/pd_flow_airflow/` |
 | Your copy (suggested) | `/home/<you>.scratch/pd_flow_airflow/` |
 | Your runs | `/home/<you>.scratch/raven_local_ws/<run_tag>/` (`summary.md` first) |
-| Your Airflow DB | `/var/tmp/<you>_pdflow_airflow_db/` on the login host you started it on |
-| Settings | `config/fixed.yaml` (shared) + `config/local.yaml` (yours) |
-| Docs | `README.md` (operator guide), `FLOW.md` (how the DAG works), this file |
+| Your Airflow DB | `/var/tmp/<you>_pdflow_airflow_db/` on the host you started it on |
+| Your instance (way A′) | `~/.pdflow/home/` (airflow.cfg, task logs, admin password) + `~/.pdflow/local.env` |
+| Settings | `config/fixed.yaml` (shared) + `config/local.yaml` or `~/.pdflow/local.yaml` (yours; the latter wins) |
+| Docs | `README.md` (operator guide), `FLOW.md` (how the DAG works), `TEAM_ROLLOUT.md` (status + rollout plan), this file |
 
 ---
 
 ## 7. The other ways in more detail
 
-**B — one shared Airflow on the intranet (demo).** In the owner's `airflow/local.env`:
+**B — one shared Airflow on the intranet (demo).** In the owner's `airflow/local.env` (honoured by `env.sh` since
+2026-10-14; before that these two were overwritten):
 
 ```sh
 export AIRFLOW__API__HOST=0.0.0.0                                    # listen for other machines
-export AIRFLOW__API__BASE_URL=http://mipscs83.mipstec.com:8081       # links in the UI
+export AIRFLOW__API__BASE_URL=http://mipspd86.mipstec.com:8081       # links in the UI
 export AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS="admin:admin,alice:viewer,bob:user"
 ```
 
 Restart; passwords for each name are generated into `airflow/home/simple_auth_manager_passwords.json.generated`.
-Others open `http://mipscs83.mipstec.com:8081` (only if the network lets that port through).
+Others open `http://mipspd86.mipstec.com:8081` (only if the network lets that port through).
 Roles: **VIEWER** read-only, **USER** can trigger/clear runs, **OP** also pools/variables, **ADMIN**
 everything. Caveat: whatever anyone triggers runs **as the owner**, in the owner's scratch, with the
 owner's ssh keys and FC licenses — fine for a demo, not for testing.

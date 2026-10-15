@@ -110,10 +110,24 @@ def run_precheck(ctx: dict, fixed: dict, log=print, lock_owner_finished=None) ->
                     and lock_owner_finished(cur.get("dag_run_id")):
                 warn.append(f"lock of finished Airflow run {cur.get('dag_run_id')} will be taken over")
             elif cur.get("dag_run_id") != ctx["dag_run_id"]:
-                fatal.append(f"run {ctx['run_tag']} is locked by Airflow run {cur.get('dag_run_id')} "
-                             f"(if that run is finished/dead: rm {lk})")
+                import socket
+                other = cur.get("host") and cur.get("host") != socket.gethostname()
+                fatal.append(f"run {ctx['run_tag']} is locked by Airflow run {cur.get('dag_run_id')} on host "
+                             f"{cur.get('host', '?')} since {cur.get('time', '?')}"
+                             + (" -- that Airflow's DB is not visible from this host, so it cannot be checked here"
+                                if other else "")
+                             + f" (if that run is finished/dead: rm {lk})")
         for step in STEPS[: step_index(ctx["start_from"])]:
             fatal += [f"resume: {p}" for p in verify_reusable(ctx, step)]
+        # resuming AT a step that already finished and was graded re-runs it (hours for corvi). Say so.
+        from .workspace import step_state
+        from .runner import adoptable_result
+        st = step_state(run_dir, ctx["start_from"])
+        if st.get("status") in ("ok", "warn") and not adoptable_result(run_dir, ctx["start_from"]):
+            nxt = STEPS[step_index(ctx["start_from"]) + 1] if step_index(ctx["start_from"]) + 1 < len(STEPS) else None
+            warn.append(f"start_from={ctx['start_from']} RE-RUNS that step (status {st['status']}, "
+                        f"{(st.get('duration_s') or 0) / 3600:.1f} h last time)"
+                        + (f"; to continue after it use start_from={nxt}" if nxt else ""))
 
     # --- disk
     root = Path(fixed["runs_root"])

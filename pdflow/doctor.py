@@ -52,9 +52,31 @@ def run_doctor(fixed: dict) -> Doctor:
     # --- local Airflow side
     py = Path(env.get("AF_BASE_PY", "/usr/bin/python3.11"))
     d.add(py.is_file(), "python 3.11 on this host", str(py),
-          "run Airflow on a host that has /usr/bin/python3.11 (mipscs82, mipscs83, mipscs85, mipspd81)")
+          "run Airflow on a host that has /usr/bin/python3.11 (mipspd86, mipspd81, mipscs82/83/85; NOT mipspd82)")
     venv = Path(env.get("VENV", ROOT / "airflow" / "venv"))
     d.add((venv / "bin" / "airflow").is_file(), "Airflow installed (venv)", str(venv), "bash airflow/setup.sh")
+    # a clone that is behind the shared repo misses fixes
+    try:
+        def git(*a):
+            return subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, text=True, timeout=10).stdout.strip()
+        head, shared = git("rev-parse", "--short", "HEAD"), git("rev-parse", "--short", "shared/main")
+        behind = git("rev-list", "--count", "HEAD..shared/main") if shared else ""
+        if head and shared and behind not in ("", "0"):
+            d.add("warn", "code up to date", f"{head}, {behind} commit(s) behind shared/main ({shared})", "git pull")
+        elif head:
+            d.add(True, "code up to date", head + ("" if shared else " (no 'shared' remote)"))
+    except Exception:
+        pass
+    # the instance dir (AIRFLOW_HOME) must be writable: on a SHARED checkout it must be your own (PDFLOW_INSTANCE)
+    inst = Path(env.get("AIRFLOW_HOME", ROOT / "airflow" / "home"))
+    inst_ok = os.access(inst, os.W_OK) if inst.exists() else os.access(inst.parent, os.W_OK)
+    d.add(inst_ok, "instance dir writable", str(inst),
+          "set PDFLOW_INSTANCE=$HOME/.pdflow/home in ~/.pdflow/local.env (bin/pdflow-user-setup.sh does it)")
+    pw = inst / "simple_auth_manager_passwords.json.generated"
+    if pw.is_file():
+        mode = pw.stat().st_mode & 0o777
+        d.add(mode & 0o077 == 0 or "warn", "admin password file private", f"mode {mode:o}  {pw}",
+              f"chmod 600 {pw}   (anyone on this host could log in as admin and run jobs as you)")
     db = Path(env.get("AF_DB_DIR", "/var/tmp/x"))
     d.add((db / "airflow.db").is_file() or "warn", "metadata DB on this host", str(db),
           "created automatically by setup.sh / start.sh on this host")
@@ -78,6 +100,13 @@ def run_doctor(fixed: dict) -> Doctor:
     else:
         d.add("warn", f"Airflow running on port {port}", "not running",
               "tmux new -s pdflow 'bash airflow/start.sh'")
+        # the two log-server ports (UI+1 / UI+2 by default) must be free as well; another user's derived
+        # ports collide when their uid % 20000 is within 2 of yours
+        lp = [int(env.get("AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT") or port + 1),
+              int(env.get("AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT") or port + 2)]
+        busy = [x for x in lp if x and _port_in_use(x)]
+        d.add(not busy or "warn", "log-server ports free", f"{lp[0]} / {lp[1]}" + (f"  in use: {busy}" if busy else ""),
+              "set AIRFLOW_PORT (+ the two *_LOG_SERVER_PORT) in local.env to free ports")
 
     # --- the DAG itself: registered, not paused, not stale (read straight from the local DB)
     dbf = db / "airflow.db"

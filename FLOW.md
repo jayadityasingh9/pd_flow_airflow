@@ -354,7 +354,7 @@ flowchart TD
     Q -- "step failed, you fixed the run copy" --> A1["UI: Clear that task (+ downstream)<br/>same Airflow run"]
     Q -- "gate rejected / timed out / stop_at reached" --> A2["new Trigger: same Run tag + same Module<br/>Start from = next step"]
     Q -- "want another clock" --> A3["new Trigger: Start from = init_design<br/>+ new clock"]
-    Q -- "Airflow died / host died" --> A4["same Airflow host: start it, Clear the task<br/>(re-attaches / adopts the result)<br/>other host: wait until the job ends (or pdflow.sh kill),<br/>then new Trigger, Start from = that step"]
+    Q -- "Airflow died / host died" --> A4["same Airflow host: start it, Clear the task<br/>(re-attaches / adopts the result)<br/>other host: wait until the job ends, rm .pdflow.lock,<br/>new Trigger, Start from = that step -> result ADOPTED + graded"]
 ```
 
 | Situation | Start from |
@@ -364,7 +364,7 @@ flowchart TD
 | rejected / timed out at gate_clock_opt | `route_auto` |
 | different clock period | `init_design` |
 | finished with an earlier `stop_at` | the next step |
-| Airflow moved to another host while a job was running | wait until the job ends (`pdflow.sh list --live`), then that step (precheck refuses while it still runs) |
+| Airflow moved to another host while a job was running | wait until the job ends (`pdflow.sh list --live`), `rm <run>/.pdflow.lock` (the old host's Airflow cannot be asked), then **that step**: its finished, never-graded result is adopted and graded, not re-run (precheck refuses while the job still runs). If the step was already graded (ok/warn), use the *next* step — precheck warns otherwise. |
 
 Rules: same **Run tag**, same **Module** (a different one is refused); build config and clock are
 taken from the run when left blank. Earlier steps are *reused* (verified, not re-run); the gates of
@@ -403,16 +403,10 @@ Project (code, config, docs): `/home/jsingh9.scratch/mywork/pd_flow_airflow/` �
 
 ## 10. Timeouts and observed runtimes
 
-**Soft timeouts** (job is killed after this much *active* time; license queueing up to 12 h is extra),
-from `config/fixed.yaml` → `timeouts_h`:
-
-| size (modules) | build | init_design | compile | clock_opt_cts | clock_opt_opto | route_auto | route_opt |
-|---|---|---|---|---|---|---|---|
-| S (debug, trf) | 1 h | 2 h | 4 h | 2 h | 2 h | 4 h | 4 h |
-| M (cic) | 1 h | 4 h | 12 h | 8 h | 8 h | 12 h | 12 h |
-| L (corvi) | 1 h | 6 h | 24 h | 16 h | 16 h | 24 h | 24 h |
-
-Airflow's own last-resort limit per step = largest soft timeout + 12 h (license) + 2 h.
+**Stop rules** (since 2026-10-09; `config/fixed.yaml`): a step is killed only when it is **hung** — no growth of its
+log for `stall_timeout_h: 6` — or past the per-size backstop `max_runtime_h: {S: 48, M: 120, L: 240}`. Both count
+*active* time only (license queueing, up to 12 h, is extra). Airflow's own last-resort `execution_timeout` per step =
+240 h + 12 h + 6 h + 2 h. Measured: corvi (L) compile 41.3 h (initial_opto / Optimization (3) alone 12 h).
 
 **Observed** (debug_module `debug_2Core_4VC_32K_rvn_drive_20260930-001616` on mipspd81, 16 cores):
 

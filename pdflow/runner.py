@@ -112,6 +112,21 @@ def consume_finished(run_dir, step) -> bool:
     return False
 
 
+def adoptable_result(run_dir, step) -> bool:
+    """True if `step` finished (rc written) under a launch no Airflow attempt has evaluated yet AND run.json
+    still records that launch's attempt as running: the watcher died (Airflow stopped, host moved) before
+    grading. A resume that starts at this step must then NOT consume the result -- run_or_reattach adopts
+    and grades it instead of re-running hours of work (prepare_workspace uses this)."""
+    from .workspace import step_state
+    sf = status_files(run_dir, step)
+    li = read_launch(run_dir, step)
+    lid = li.get("launch_id")
+    if not (sf["rc"].exists() and lid and _read(sf["consumed"]) != lid):
+        return False
+    st = step_state(run_dir, step)
+    return st.get("status") == "running" and (not st.get("attempt") or st.get("attempt") == li.get("attempt"))
+
+
 class Tailer:
     """Incrementally read complete new lines of a log that may not exist yet / be replaced."""
 

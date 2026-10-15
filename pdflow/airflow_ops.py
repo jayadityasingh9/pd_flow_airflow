@@ -94,7 +94,8 @@ def _airflow_healthy(timeout: float = 1.5) -> bool:   # kept for status checks
     """Is the API server + metadata DB answering? (Distinguishes a deliberate 'Mark failed' from an
     Airflow outage, where the supervisor also SIGTERMs tasks after failed heartbeats.)"""
     import urllib.request
-    base = os.environ.get("AIRFLOW__API__BASE_URL", "http://127.0.0.1:8081").rstrip("/")
+    port = os.environ.get("AIRFLOW_PORT") or str(20000 + os.getuid() % 20000)
+    base = os.environ.get("AIRFLOW__API__BASE_URL", f"http://127.0.0.1:{port}").rstrip("/")
     try:
         with urllib.request.urlopen(f"{base}/api/v2/monitor/health", timeout=timeout) as r:
             d = json.loads(r.read().decode() or "{}")
@@ -301,7 +302,7 @@ class PdQorGate(ApprovalOperator):
 
     @property
     def serialized_params(self):
-        # The DAG merges its 11 trigger params into every task AFTER HITLOperator filtered them,
+        # The DAG merges its trigger params (16 today) into every task AFTER HITLOperator filtered them,
         # so without this the review form would show (and require) all of them.
         return {"comment": self.params.get_param("comment").serialize()}
 

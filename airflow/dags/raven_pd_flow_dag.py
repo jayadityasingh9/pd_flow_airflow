@@ -8,8 +8,8 @@ knobs; everything else is predefined in config/fixed.yaml. The flow:
   -> gate_compile -> fc_clock_opt_cts -> fc_clock_opt_opto -> gate_clock_opt
   -> fc_route_auto -> fc_route_opt -> finalize
 
-Each run lives in /home/jsingh9.scratch/raven_local_ws/<run_tag>/ (a fresh copy of
-$MIPS_HOME/rm_fc_cad -- the Perforce workspace is never modified). Tool steps run DETACHED
+Each run lives in <runs_root>/<run_tag>/ (default /home/<user>.scratch/raven_local_ws; a fresh copy
+of $MIPS_HOME/rm_fc_cad -- the Perforce workspace is never modified). Tool steps run DETACHED
 on the chosen pd host over ssh, so they survive an Airflow restart ("Clear" re-attaches).
 The logic lives in pdflow/ (plain Python); this file only wires it into Airflow.
 """
@@ -31,7 +31,7 @@ from pdflow.context import InputError, resolve
 from pdflow.patch import apply_patches, apply_toggle, specs_from_fixed, toggles_from_fixed
 from pdflow.config import MARKERS_AFTER
 from pdflow.precheck import run_precheck
-from pdflow.runner import consume_finished
+from pdflow.runner import adoptable_result, consume_finished, read_launch
 from pdflow.scripts import write_all
 from pdflow.summary import append_index, overall, record_result, write_summary
 from pdflow.workspace import (create_workspace, now_iso, open_existing, release_lock, update_manifest,
@@ -86,7 +86,7 @@ PARAMS = {
         section="Where / what"),
     "build_path": Param(
         None, type=["null", "string"], title="Build path (for 'existing' / 'filelist')",
-        description="Existing build: e.g. /home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261006-232004 "
+        description=f"Existing build: e.g. {FIXED['runs_root']}/<run_tag> "
                     "(a run dir; its build config is read from run.json). Custom filelist: absolute path of the .tcl.",
         section="Where / what"),
     "tech_node": Param(
@@ -128,7 +128,7 @@ PARAMS = {
     "run_tag": Param(
         None, type=["null", "string"], title="Run tag", pattern=r"^\s*([A-Za-z0-9][A-Za-z0-9._-]{0,79})?\s*$",   # spaces from copy/paste are stripped
         description="Blank = automatic <module>_<config>_<date-time> (new runs). REQUIRED to resume: the "
-                    "existing folder name under /home/jsingh9.scratch/raven_local_ws/.",
+                    f"existing folder name under {FIXED['runs_root']}/.",
         section="Flow control"),
     "gate_after_compile": Param(True, type="boolean", title="Review QoR after compile",
                                 description="Pause for Approve/Reject after compile.", section="Review gates"),
@@ -215,7 +215,14 @@ def raven_pd_flow():
             # steps re-run now invalidate everything after them (their nlib labels are re-derived)
             later = [s for s in MARKERS_AFTER.get(ctx["start_from"], []) if s in STEPS and s not in todo]
             for s in todo:
-                if consume_finished(run_dir, s):   # an old finished result must not be adopted
+                # An old finished result must not be adopted by a resume -- EXCEPT the start_from step when its
+                # last launch finished while nobody graded it (run.json still says "running": Airflow died or
+                # moved host meanwhile). That result is adopted and graded by fc_<step> instead of being redone.
+                if s == ctx["start_from"] and adoptable_result(run_dir, s):
+                    print(f"{s}: result of launch {read_launch(run_dir, s).get('launch_id')} finished but was never "
+                          f"graded -> fc_{s} will ADOPT it (no re-run)")
+                    continue
+                if consume_finished(run_dir, s):
                     print(f"{s}: previous result marked consumed -> will run fresh")
             prev_qor = run_dir / "qor" / f".prev-{now_iso().replace(':', '')}"
             for s in todo + later:

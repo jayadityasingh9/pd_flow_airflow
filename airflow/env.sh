@@ -4,21 +4,42 @@
 #
 # Everything is isolated under the project directory:
 #   airflow/venv/   the Airflow install (isolated Python venv, built by setup.sh)
-#   airflow/home/   AIRFLOW_HOME: airflow.cfg, logs, generated admin password
+#   airflow/home/   AIRFLOW_HOME (default instance dir): airflow.cfg, logs, generated admin password
 #   airflow/dags/   the DAG(s)
 #   pdflow/         the flow logic (plain Python, imported by the DAG; on PYTHONPATH below)
 #   config/fixed.yaml  every predefined (non per-run) value
 #
 # Run directories are NOT here -- they live under runs_root in config/fixed.yaml
-# (/home/jsingh9.scratch/raven_local_ws/<run_tag>/).
+# (/home/<user>.scratch/raven_local_ws/<run_tag>/ by default).
+#
+# Two ways to use one checkout (see SHARING.md / TEAM_ROLLOUT.md):
+#   * your own clone: overrides in airflow/local.env + config/local.yaml (git-ignored), instance = airflow/home
+#   * a SHARED read-only install: overrides in ~/.pdflow/local.env + ~/.pdflow/local.yaml, instance =
+#     ~/.pdflow/home (PDFLOW_INSTANCE) -- created by bin/pdflow-user-setup.sh. Several people can then run
+#     their own Airflow (own port, own DB, own logs, own password) from the same code.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Nothing this Airflow creates (run dirs, generated scripts executed on the pd hosts) is group-writable.
 umask 022
 export PDFLOW_ROOT="$(cd "$HERE/.." && pwd)"
 
-# Per-checkout overrides (git-ignored), e.g. AIRFLOW_PORT, AF_DB_DIR, VENV -- see local.env.example
+# Overrides, lowest to highest priority (all optional, all git-ignored):
+#   1. $HERE/local.env            per-checkout (the owner of this clone)
+#   2. ~/.pdflow/local.env        per-user (wins; needed when the checkout is shared), or $PDFLOW_LOCAL_ENV
+# Keys: AIRFLOW_PORT, AF_DB_DIR, VENV, PDFLOW_INSTANCE, AIRFLOW__API__HOST, ... -- see local.env.example
 [ -f "$HERE/local.env" ] && source "$HERE/local.env"
+PDFLOW_LOCAL_ENV="${PDFLOW_LOCAL_ENV:-$HOME/.pdflow/local.env}"
+if [ -f "$PDFLOW_LOCAL_ENV" ]; then
+  _p0="${AIRFLOW_PORT:-}"; _w0="${AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT:-}"; _t0="${AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT:-}"
+  source "$PDFLOW_LOCAL_ENV"
+  # a user file that moves the UI port but not the log ports must not inherit the checkout's explicit log
+  # ports (they would collide with the checkout owner's instance): fall back to UI+1 / UI+2 below.
+  if [ "${AIRFLOW_PORT:-}" != "$_p0" ]; then
+    [ "${AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT:-}" = "$_w0" ] && unset AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT
+    [ "${AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT:-}" = "$_t0" ] && unset AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT
+  fi
+  unset _p0 _w0 _t0
+fi
 
 # --- Interpreter Airflow itself runs on ---------------------------------------------------
 # System python3.11: its sqlite3 supports the deterministic functions Airflow's metadata DB
@@ -31,7 +52,12 @@ export VENV="${VENV:-$HERE/venv}"
 export VPY="$VENV/bin/python"
 export AIRFLOW_BIN="$VENV/bin/airflow"
 
-export AIRFLOW_HOME="$HERE/home"
+# --- The instance: AIRFLOW_HOME (airflow.cfg with its secrets, task logs, admin password, shutdown flag)
+# One per running Airflow. Default = this checkout's airflow/home. Two Airflows started from the SAME
+# checkout on two hosts would share it (secrets, logs, the stop.sh flag) -- give each its own
+# PDFLOW_INSTANCE (bin/pdflow-user-setup.sh puts it in ~/.pdflow/home).
+export PDFLOW_INSTANCE="${PDFLOW_INSTANCE:-$HERE/home}"
+export AIRFLOW_HOME="$PDFLOW_INSTANCE"
 export AIRFLOW__CORE__DAGS_FOLDER="$HERE/dags"
 export AIRFLOW__CORE__LOAD_EXAMPLES="False"
 # A fresh DB would create the DAG PAUSED: triggered runs then sit "queued" forever.
@@ -63,7 +89,7 @@ export AIRFLOW__TRIGGERER__TRIGGERER_HEALTH_CHECK_THRESHOLD="180"
 # SQLite over NFS + Airflow's concurrent processes corrupts the DB (seen in freq_hist_jenkins:
 # "database disk image is malformed", scheduler died). So the DB is tied to the host where
 # start.sh runs; run.json in each run dir lets a run resume from any host.
-export AF_DB_DIR="${AF_DB_DIR:-/var/tmp/${USER:-jsingh9}_pdflow_airflow_db}"
+export AF_DB_DIR="${AF_DB_DIR:-/var/tmp/$(id -un)_pdflow_airflow_db}"
 mkdir -p "$AF_DB_DIR" 2>/dev/null || true
 export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AF_DB_DIR}/airflow.db"
 
@@ -71,11 +97,13 @@ export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AF_DB_DIR}/airflow.db"
 # Each user gets their own ports (several people share the login hosts): UI = 20000 + uid % 20000,
 # worker / triggerer log servers = UI+1 / UI+2. Override in local.env (jsingh9's copy keeps 8081).
 # BASE_URL matters: Airflow 3 tasks reach the execution API through it.
+# HOST / BASE_URL can be overridden too (SHARING.md way B: 0.0.0.0 + the host's name) -- the default
+# binds to loopback only, so the UI is reachable just through an ssh tunnel.
 _PDFLOW_BASE_PORT=$(( 20000 + $(id -u) % 20000 ))
 export AIRFLOW_PORT="${AIRFLOW_PORT:-$_PDFLOW_BASE_PORT}"
 export AIRFLOW__API__PORT="$AIRFLOW_PORT"
-export AIRFLOW__API__HOST="127.0.0.1"
-export AIRFLOW__API__BASE_URL="http://127.0.0.1:${AIRFLOW_PORT}"
+export AIRFLOW__API__HOST="${AIRFLOW__API__HOST:-127.0.0.1}"
+export AIRFLOW__API__BASE_URL="${AIRFLOW__API__BASE_URL:-http://127.0.0.1:${AIRFLOW_PORT}}"
 # worker/triggerer log servers: off the defaults 8793/8794 used by the other (freq_hist) Airflow
 export AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT="${AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT:-$(( AIRFLOW_PORT + 1 ))}"
 export AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT="${AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT:-$(( AIRFLOW_PORT + 2 ))}"
@@ -83,3 +111,8 @@ export AIRFLOW__LOGGING__TRIGGER_LOG_SERVER_PORT="${AIRFLOW__LOGGING__TRIGGER_LO
 # --- The flow package + its fixed config -------------------------------------------------
 export PYTHONPATH="$PDFLOW_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export PDFLOW_FIXED="${PDFLOW_FIXED:-$PDFLOW_ROOT/config/fixed.yaml}"
+# Per-user config overlay: $PDFLOW_LOCAL, else ~/.pdflow/local.yaml if it exists, else config/local.yaml
+# (resolved in pdflow/config.py; exported here so every tool sees the same choice).
+if [ -z "${PDFLOW_LOCAL:-}" ] && [ -f "$HOME/.pdflow/local.yaml" ]; then
+  export PDFLOW_LOCAL="$HOME/.pdflow/local.yaml"
+fi

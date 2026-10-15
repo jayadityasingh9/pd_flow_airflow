@@ -24,18 +24,20 @@
 
 ## 1. Start / stop Airflow
 
-Airflow runs on the host where you start it (now **mipscs83**; mipscs82 kept freezing). Its metadata DB is
-**node-local** (`/var/tmp/jsingh9_pdflow_airflow_db`), so always start it on the same host; on a new
-host `start.sh` creates an empty DB (runs on disk are unaffected and can be resumed).
+Airflow runs on the host where you start it (since 2026-10-14: **mipspd86**, a compute host; the login servers
+mipscs82/83 froze under load and their SQLite scheduler died twice). Its metadata DB is **node-local**
+(`/var/tmp/<user>_pdflow_airflow_db`), so always start it on the same host; on a new host `start.sh` creates an
+empty DB (runs on disk are unaffected and can be resumed from their `run.json`).
 
 ```csh
 # start (inside tmux so it survives logout; FC runs take hours)
+ssh mipspd86
 tmux new -s pdflow 'bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/start.sh'
 #   detach: Ctrl-b d      re-attach: tmux attach -t pdflow
 
-# on your laptop: tunnel, then open http://127.0.0.1:8081
-ssh -L 8081:127.0.0.1:8081 jsingh9@mipscs83.mipstec.com
-#   user: admin   password: cat /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/home/simple_auth_manager_passwords.json.generated
+# on your laptop: tunnel, then open http://127.0.0.1:<port>  (owner: 8081; others: 20000 + uid % 20000, printed by start.sh)
+ssh -L 8081:127.0.0.1:8081 jsingh9@mipspd86.mipstec.com
+#   user: admin   password: cat <instance>/simple_auth_manager_passwords.json.generated   (instance = airflow/home, or $PDFLOW_INSTANCE)
 
 # status / stop
 bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/status.sh
@@ -46,7 +48,9 @@ Stopping Airflow does **not** stop FC jobs: they run detached on the pd host. Af
 **Clear** the running task in the UI and it re-attaches to the job (or picks up its result if it
 finished meanwhile).
 
-Port **8081** (the older freq_hist Airflow uses 8080). One-time install was `bash airflow/setup.sh`.
+Ports: the owner's copy keeps **8081** (`airflow/local.env`; the older freq_hist Airflow uses 8080); every other user
+gets `20000 + uid % 20000` (+1/+2 for the log servers). One-time install was `bash airflow/setup.sh`; a user of a
+shared install runs `bash bin/pdflow-user-setup.sh` instead (see `SHARING.md`).
 
 ## 2. Run the flow (the trigger form)
 
@@ -138,7 +142,8 @@ bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh qor <run_tag>
 | Continue a stopped / rejected / finished run | New trigger: same **Run tag**, same **Module**, **Start from** = next step (build config and clock are taken from the run when left blank). |
 | Change the clock of an existing run | Resume with **Start from = init_design** (the SDC is read there). |
 | Airflow died while FC was running | `start.sh`, then **Clear** the task → it re-attaches. |
-| Stop a running step | UI: task → **Mark failed** (kills the whole remote job: TERM, KILL after 60 s), or `bash .../bin/pdflow.sh kill <run_tag>`. If the Airflow API is unhealthy at that moment the job is deliberately **not** killed (so an Airflow hiccup can never kill a 20 h route_opt) — use `pdflow.sh kill`. |
+| Stop a running step | UI: task → **Mark failed** (kills the whole remote job: TERM, KILL after 60 s), or `bash .../bin/pdflow.sh kill <run_tag>`. The job is killed **only** when the task's state in the Airflow DB says a person stopped it (failed/success/…) and `stop.sh` did not just run; any Airflow-internal stop (heartbeat loss, restart, shutdown) leaves the FC job running for re-attach — then use `pdflow.sh kill` if you really want it gone. |
+| Airflow moved to another host while a step ran | wait for the step to finish, then new trigger: same Run tag, **Start from = that step** → the finished, never-graded result is **adopted** and graded (no re-run). If the step was already graded (status ok/warn), Start from = the *next* step; precheck warns if you would re-run a graded step. |
 | Run a step by hand, outside Airflow | `ssh mipspd8x` then `csh -f <run>/scripts/30_compile.csh` |
 
 ## 6. Fixed (predefined) settings
@@ -155,7 +160,7 @@ All in `config/fixed.yaml` (a snapshot is stored in every `run.json`):
 | TECH_DIR | from the **Technology node** field (default `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack`); the pairing tech dir ↔ `build.py -tech` lives in `config/fixed.yaml` → `tech_nodes` |
 | FC call | `fc_shell -f ../../scripts_block/rm_fc_scripts/<step>.tcl` in `<module>/rm_fc/tmp` (not `make`: its `\| tee` hides failures and it silently re-runs prerequisites) |
 | Tool environment | clean (`env -i`), started with `setsid` on the pd host → no DISPLAY, no stray variables |
-| Soft timeouts | per module size, e.g. S: compile 4 h, route_opt 4 h; L (corvi): compile 24 h. Counted from when fc_shell becomes **active** — time spent queueing for a license (up to 12 h) is not counted. |
+| Stop rules | a step is stopped only when **hung** (`stall_timeout_h: 6` with no log growth) or past the backstop `max_runtime_h` (S 48 h / M 120 h / L 240 h). Counted from when fc_shell becomes **active** — time spent queueing for a license (up to 12 h) is not counted. corvi compile measured 41 h. |
 
 | Module | DESIGN_NAME | Default config | Default clock | Floorplan |
 |---|---|---|---|---|
@@ -225,33 +230,36 @@ With *Continue past DFT Rule S19* on, the S19 stop becomes a warning too (`DFT R
 ## 8. Files in this project
 
 ```
-/home/jsingh9.scratch/mywork/pd_flow_airflow/
-  README.md  PLAN.md
-  config/fixed.yaml                 predefined settings
+<checkout>/                         (owner: /home/jsingh9.scratch/mywork/pd_flow_airflow)
+  README.md  FLOW.md  SHARING.md  TEAM_ROLLOUT.md  HANDOFF.md  PLAN.md  PROJECT_STATEMENT.md
+  config/fixed.yaml                 predefined settings      config/local.yaml.example  per-user overrides
   airflow/dags/raven_pd_flow_dag.py the DAG (form + task wiring)
-  airflow/{setup,start,stop,status,af,env}.sh
+  airflow/{setup,start,stop,status,af,env}.sh   airflow/local.env.example
+  airflow/home/                     default instance (AIRFLOW_HOME): airflow.cfg, task logs, admin password
   pdflow/                           the flow logic (plain Python, unit-tested)
-    context.py   form -> resolved run        precheck.py  read-only checks
-    workspace.py run dir, run.json, lock     patch.py     design_setup/fc_setup edits
-    scripts.py   generated csh scripts       remote.py    ssh to pd hosts
-    runner.py    launch / re-attach / tail   checks.py    PASS/FAIL rules
-    qor.py       report parsing + gate text  summary.py   summary.md, runs_index
-    airflow_ops.py  the step + gate operators    cli.py   bin/pdflow.sh
-  bin/pdflow.sh
+    config.py    fixed.yaml + local.yaml       context.py   form -> resolved run
+    precheck.py  read-only checks              workspace.py run dir, run.json, lock
+    patch.py     design_setup/fc_setup edits   buildsrc.py  RTL source: existing build / custom filelist
+    scripts.py   generated csh scripts         remote.py    ssh to pd hosts
+    runner.py    launch / re-attach / adopt    checks.py    PASS/FAIL rules
+    qor.py       report parsing + gate text    summary.py   summary.md, runs_index
+    doctor.py    `doctor` + `report`           airflow_ops.py  the step + gate operators
+    cli.py       bin/pdflow.sh
+  bin/pdflow.sh                     command line      bin/pdflow-user-setup.sh   per-user setup on a shared install
   tests/test_pdflow.py  tests/fixtures/
 ```
 
 ## 9. Verify it yourself
 
 ```csh
-cd /home/jsingh9.scratch/mywork/pd_flow_airflow
-bash -c 'source airflow/env.sh; airflow/venv/bin/python -m pytest -q -p no:cacheprovider tests'
-#   expect: all passed
+cd <checkout>
+bash -c 'source airflow/env.sh; $VENV/bin/python -m pytest -q -p no:cacheprovider tests'
+#   expect: all passed  (69 as of 2026-10-14; the suite ignores your local.yaml and skips Perforce-dependent tests if unreadable)
 bash airflow/af.sh dags list-import-errors
 #   expect: No data found
 bash airflow/af.sh dags test raven_pd_flow --conf '{"fc_host":"mipspd81","module":"debug_module","dry_run":true,"clock_period_ns":1.5,"max_cores":8}'
 #   expect: "run PASSED"; then:
-diff -rq /home/jsingh9/Perforce/jsingh9_raven_ws2/rm_fc_cad /home/jsingh9.scratch/raven_local_ws/dry-debug_<...>/rm_fc_cad
+diff -rq $MIPS_HOME/rm_fc_cad <runs_root>/dry-debug_<...>/rm_fc_cad
 #   expect: only debug_module design_setup.tcl and fc_setup.tcl differ
 ```
 
@@ -262,4 +270,5 @@ diff -rq /home/jsingh9/Perforce/jsingh9_raven_ws2/rm_fc_cad /home/jsingh9.scratc
   pool `pd_fc`).
 * A non-default build config still uses the module's fixed DEF/SDC (precheck warns).
 * Scope ends at route_opt (no chip_finish / write_data / StarRC / PrimeTime).
-* Timeouts are placeholders until real runtimes are known — adjust `timeouts_h` in `config/fixed.yaml`.
+* `max_runtime_h` (S 48 / M 120 / L 240) and `stall_timeout_h` (6) in `config/fixed.yaml` are generous backstops; tune
+  them from real runtimes (corvi compile: 41 h).

@@ -1,5 +1,7 @@
-"""Unit tests for pdflow (no Airflow, no tools, no ssh).   Run:
-    cd /home/jsingh9.scratch/mywork/pd_flow_airflow && airflow/venv/bin/python -m pytest -q tests
+"""Unit tests for pdflow (no Airflow, no tools, no ssh).   Run (from any clone):
+    bash -c 'source airflow/env.sh; $VENV/bin/python -m pytest -q tests'
+The suite reads config/fixed.yaml WITHOUT any local.yaml overlay, so a tester's own mips_home/runs_root
+cannot change the expected values. Tests that need the real Perforce workspace skip when it is unreadable.
 """
 from __future__ import annotations
 
@@ -19,6 +21,10 @@ from pdflow.config import FC_STEPS, MARKERS_AFTER, STEPS, load_fixed, step_index
 FIX = Path(__file__).parent / "fixtures"
 TECH = "GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack"
 MODULES = ["corvi_module", "cic_module", "debug_module", "trf_module"]
+os.environ["PDFLOW_LOCAL"] = os.devnull          # never apply config/local.yaml or ~/.pdflow/local.yaml here
+MIPS_HOME = load_fixed()["mips_home"]            # the checked-in default (jsingh9's workspace)
+needs_perforce = pytest.mark.skipif(not os.access(f"{MIPS_HOME}/rm_fc_cad", os.R_OK),
+                                    reason=f"Perforce workspace {MIPS_HOME} not readable here")
 
 
 @pytest.fixture()
@@ -43,7 +49,7 @@ def ctx_for(fixed, **kw):
 # ---------------------------------------------------------------------------------- config
 def test_fixed_loads_and_expands():
     f = load_fixed()
-    assert f["rm_fc_cad_src"] == "/home/jsingh9/Perforce/jsingh9_raven_ws2/rm_fc_cad"
+    assert f["rm_fc_cad_src"] == f["mips_home"] + "/rm_fc_cad" and f["mips_home"].startswith("/")
     assert f["build_py"].startswith(f["mips_home"])
     assert set(f["modules"]) == set(MODULES)
     for m in f["modules"].values():
@@ -209,7 +215,7 @@ def test_scripts_render_and_csh_syntax(fixed, tmp_path):
     assert "setenv SYN_CONFIG  2Core_4VC_32K_rvn_drive" in env and "setenv SNPSLMD_QUEUE true" in env
     b = Path(out["build"]).read_text()
     assert "--configName 2Core_4VC_32K_rvn_drive --workDirectory 2Core_4VC_32K_rvn_drive" in b
-    assert "-t /home/jsingh9/Perforce/jsingh9_raven_ws2/cm3/src/main/cm3_dbu/rvn_dbu_top_wrapper.sv" in b
+    assert f"-t {fixed['mips_home']}/cm3/src/main/cm3_dbu/rvn_dbu_top_wrapper.sv" in b
     eb = Path(out["env_build"]).read_text()
     assert "setenv IMGSITE SC" in eb and 'setenv LD_LIBRARY_PATH ""' in eb
     ln = scripts.launcher_path(c, "compile").read_text()
@@ -649,11 +655,12 @@ def test_create_workspace_cleans_up_on_failure(fixed, monkeypatch):
     assert not Path(c["run_dir"]).exists()
 
 
+@needs_perforce
 def test_rtl_fix_exctype_size(fixed, tmp_path):
     c = ctx_for(fixed, module="corvi_module")
     inc = patch.rtl_include_root(c) / "raven/src/main/include"
     inc.mkdir(parents=True)
-    src = "/home/jsingh9/Perforce/jsingh9_raven_ws2/raven/src/main/include/rvn_csr_defs.vh"
+    src = f"{MIPS_HOME}/raven/src/main/include/rvn_csr_defs.vh"
     shutil.copy(src, inc / "rvn_csr_defs.vh")
     (inc / "rvn_csr_defs.vh").chmod(0o444)
     d = tmp_path / "d.diff"
@@ -698,6 +705,8 @@ def test_lock_takeover_only_when_owner_finished(tmp_path):
 
 def test_local_yaml_overlay_and_env_expansion(tmp_path, monkeypatch):
     from pdflow.config import load_fixed as lf
+    monkeypatch.delenv("PDFLOW_LOCAL", raising=False)        # the suite pins it to /dev/null; this test wants the overlay
+    monkeypatch.setenv("HOME", str(tmp_path / "h"))          # and no ~/.pdflow/local.yaml
     fx = tmp_path / "fixed.yaml"
     fx.write_text("mips_home: /p/ws\nrm_fc_cad_src: ${mips_home}/rm_fc_cad\nruns_root: /home/${USER}.scratch/r\n"
                   "modules: {a: {size: S, x: 1}}\nfc_hosts: [h1, h2]\n")
@@ -848,7 +857,9 @@ def test_scripts_carry_tech_and_cores_line(fixed):
 
 
 # ------------------------------------------------------------------------------- build source
-REAL_BUILD = "/home/jsingh9.scratch/raven_local_ws/debug_2Core_4VC_32K_rvn_drive_20261006-230836"
+# a finished real build to exercise `existing` against; tests skip when it is not there (other users / hosts)
+REAL_BUILD = os.environ.get("PDFLOW_TEST_BUILD",
+                            "/home/jsingh9.scratch/raven_local_ws/debug_2Core_4VC_32K_rvn_drive_20261006-230836")
 
 
 def test_build_source_existing_real_build(fixed):
@@ -914,3 +925,105 @@ def test_build_source_filelist(fixed, tmp_path):
     assert dst.read_text() == fl.read_text()
     # Perforce copy untouched
     assert "$MIPS_HOME/../filelists/corvi_syn_rtl.tcl" in src.read_text()
+
+
+# --------------------------------------------------------------------------- adopt on resume (10-14)
+def _finished_unwatched(c, step="compile", attempt="run:1", status="running"):
+    """status files of a job that finished while no Airflow task was watching; run.json still 'running'."""
+    st = Path(c["run_dir"]) / "status"
+    for k, v in (("pid", "mipspd81 999"), ("start", "0"), ("rc", "0"), ("end", "5")):
+        (st / f"{step}.{k}").write_text(v + "\n")
+    (st / f"{step}.launch").write_text(json.dumps({"launch_id": f"{attempt}@T", "attempt": attempt, "host": "mipspd81"}))
+    workspace.write_manifest(c["run_dir"], {"inputs": c, "history": [], "gates": {},
+                                            "steps": {s: {"status": "pending"} for s in STEPS}})
+    workspace.set_step(c["run_dir"], step, status=status, attempt=attempt, host="mipspd81")
+
+
+def test_adoptable_result_only_for_unwatched_finished_launch(fixed):
+    c = mk_run(fixed)
+    _finished_unwatched(c)
+    assert runner.adoptable_result(c["run_dir"], "compile") is True
+    # graded already (consumed) -> not adoptable, a resume at compile re-runs it
+    runner.mark_consumed(c["run_dir"], "compile", "run:1@T")
+    assert runner.adoptable_result(c["run_dir"], "compile") is False
+    # finished + unconsumed but run.json already says warn (graded by someone) -> not adoptable
+    c2 = mk_run(dict(fixed, runs_root=fixed["runs_root"] + "2"))
+    _finished_unwatched(c2, status="warn")
+    assert runner.adoptable_result(c2["run_dir"], "compile") is False
+    # still running (no rc) -> not adoptable (re-attach handles that)
+    c3 = mk_run(dict(fixed, runs_root=fixed["runs_root"] + "3"))
+    _finished_unwatched(c3)
+    (Path(c3["run_dir"]) / "status" / "compile.rc").unlink()
+    assert runner.adoptable_result(c3["run_dir"], "compile") is False
+
+
+def test_resume_adopts_unwatched_result_instead_of_rerunning(monkeypatch, fixed):
+    """The HANDOFF scenario: Airflow died/moved while compile ran; compile finished; resume with
+    start_from=compile must ADOPT (grade) the result, not relaunch 40 h of FC."""
+    c = mk_run(fixed)
+    _finished_unwatched(c)
+    # what prepare_workspace now does for the start_from step
+    assert runner.adoptable_result(c["run_dir"], "compile")
+    assert runner.consume_finished(c["run_dir"], "clock_opt_cts") is False     # later steps: nothing to consume
+    fake = FakeRemote(c["run_dir"], "compile")
+    setup_runner(monkeypatch, fixed, fake)
+    r = runner.run_or_reattach(fixed, c, "compile", "mipspd81", 1e9, "run:2", log=lambda m: None, poll_s=0)
+    assert fake.launched == 0 and r.reattached == "finished" and r.rc == 0 and r.launch_id == "run:1@T"
+    runner.mark_consumed(c["run_dir"], "compile", r.launch_id)                 # PdStepOperator grades + consumes
+    assert runner.adoptable_result(c["run_dir"], "compile") is False           # second resume would re-run
+
+
+def test_precheck_warns_when_start_from_reruns_graded_step(fixed, monkeypatch):
+    from pdflow import precheck as pc
+    c = mk_run(fixed)
+    _finished_unwatched(c, status="warn")
+    workspace.set_step(c["run_dir"], "compile", duration_s=148690.0)
+    runner.mark_consumed(c["run_dir"], "compile", "run:1@T")
+    for s in ("build", "init_design"):
+        workspace.set_step(c["run_dir"], s, status="ok")
+    c2 = dict(c, is_resume=True, start_from="compile", dag_run_id="manual__y")
+    monkeypatch.setattr(pc, "verify_reusable", lambda ctx, step: [])
+    monkeypatch.setattr(pc.remote, "host_probe", lambda f, h: {"error": "skipped"})
+    monkeypatch.setattr(pc.remote, "fc_env_probe", lambda f, h: {"error": "skipped"})
+    monkeypatch.setattr(pc, "live_jobs", lambda root: [])
+    monkeypatch.setattr(pc.shutil, "disk_usage", lambda p: type("D", (), {"free": 10**13})())
+    res = pc.run_precheck(c2, fixed, log=lambda m: None)
+    assert any("RE-RUNS that step" in w and "41.3 h" in w and "start_from=clock_opt_cts" in w for w in res["warnings"]), res
+    c3 = dict(c2, start_from="clock_opt_cts")
+    res = pc.run_precheck(c3, fixed, log=lambda m: None)
+    assert not any("RE-RUNS" in w for w in res["warnings"])
+
+
+def test_env_sh_overrides_and_instance(tmp_path):
+    """local.env values for API host/URL must win (SHARING way B); PDFLOW_INSTANCE moves AIRFLOW_HOME;
+    ~/.pdflow/local.env is read after the checkout's local.env."""
+    root = Path(__file__).resolve().parent.parent
+    home = tmp_path / "home"; (home / ".pdflow").mkdir(parents=True)
+    (home / ".pdflow" / "local.env").write_text("export AIRFLOW_PORT=23456\nexport AIRFLOW__API__HOST=0.0.0.0\n"
+                                                "export AIRFLOW__API__BASE_URL=http://h:23456\n"
+                                                "export PDFLOW_INSTANCE=$HOME/.pdflow/home\n")
+    (home / ".pdflow" / "local.yaml").write_text("runs_root: /tmp/x\n")
+    env = {k: v for k, v in os.environ.items() if k != "PDFLOW_LOCAL"}
+    out = subprocess.run(["bash", "-c", f"HOME={home} bash -c 'source {root}/airflow/env.sh >/dev/null 2>&1; "
+                          "echo $AIRFLOW_PORT $AIRFLOW__API__HOST $AIRFLOW__API__BASE_URL $AIRFLOW_HOME $PDFLOW_LOCAL "
+                          "$AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT'"], capture_output=True, text=True, env=env).stdout.split()
+    # the log port follows the user's UI port even if the checkout's local.env pins its own (owner's 8795)
+    assert out == ["23456", "0.0.0.0", "http://h:23456", f"{home}/.pdflow/home", f"{home}/.pdflow/local.yaml", "23457"]
+    # no ~/.pdflow: defaults (loopback, instance = checkout's airflow/home)
+    out = subprocess.run(["bash", "-c", f"HOME={tmp_path}/nohome bash -c 'source {root}/airflow/env.sh >/dev/null 2>&1; "
+                          "echo $AIRFLOW__API__HOST $AIRFLOW_HOME ${PDFLOW_LOCAL:-unset}'"],
+                         capture_output=True, text=True, env=env).stdout.split()
+    assert out[0] == "127.0.0.1" and out[1] == str(root / "airflow" / "home") and out[2] == "unset"
+
+
+def test_local_config_path_prefers_user_overlay(tmp_path, monkeypatch):
+    from pdflow.config import local_config_path
+    fx = tmp_path / "cfg" / "fixed.yaml"; fx.parent.mkdir()
+    monkeypatch.delenv("PDFLOW_LOCAL", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "h"))
+    assert local_config_path(fx) == fx.with_name("local.yaml")
+    (tmp_path / "h" / ".pdflow").mkdir(parents=True)
+    (tmp_path / "h" / ".pdflow" / "local.yaml").write_text("x: 1\n")
+    assert local_config_path(fx) == tmp_path / "h" / ".pdflow" / "local.yaml"
+    monkeypatch.setenv("PDFLOW_LOCAL", str(tmp_path / "explicit.yaml"))
+    assert local_config_path(fx) == tmp_path / "explicit.yaml"

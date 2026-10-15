@@ -72,8 +72,12 @@ def _merge(base: dict, over: dict) -> dict:
 
 
 def local_config_path(fixed_path: Path) -> Path:
-    """Per-checkout overrides (git-ignored): config/local.yaml next to fixed.yaml, or $PDFLOW_LOCAL."""
-    return Path(os.environ.get("PDFLOW_LOCAL") or fixed_path.with_name("local.yaml"))
+    """The per-user overlay, first match wins: $PDFLOW_LOCAL; ~/.pdflow/local.yaml (a user of a SHARED
+    checkout, created by bin/pdflow-user-setup.sh); config/local.yaml next to fixed.yaml (own clone)."""
+    if os.environ.get("PDFLOW_LOCAL"):
+        return Path(os.environ["PDFLOW_LOCAL"])
+    user = Path(os.path.expanduser("~")) / ".pdflow" / "local.yaml"
+    return user if user.is_file() else fixed_path.with_name("local.yaml")
 
 
 def load_fixed(path: str | os.PathLike | None = None) -> dict:
