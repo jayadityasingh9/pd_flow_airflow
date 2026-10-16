@@ -52,7 +52,7 @@ finished meanwhile).
 **Keep it running without you** (optional, per host, no root): `bash airflow/watchdog.sh install` on the
 Airflow host adds a cron check every 5 min (+ after reboot) that restarts Airflow when its health endpoint
 is down or any component is unhealthy (the SQLite "database is locked" scheduler death, a host reboot).
-`watchdog.sh status|off|on|remove`.
+`watchdog.sh status|off|on|remove`; its log is `<instance>/watchdog.<host>.log`.
 
 **Reach the UI from Windows: one direct tunnel to the Airflow host, no gateway.** PowerShell:
 `ssh -N -L 8081:127.0.0.1:8081 jsingh9@mipscs85.mipstec.com` (leave the window open), then

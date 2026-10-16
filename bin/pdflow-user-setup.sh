@@ -61,6 +61,8 @@ Your Airflow (runs as you, on this host, with your ssh keys and licenses):
   UI:      http://127.0.0.1:$PORT   user admin, password: cat $CFG/home/simple_auth_manager_passwords.json.generated
   CLI:     bash $ROOT/bin/pdflow.sh list|status|qor|gates|approve|doctor|report ...
   stop:    bash $ROOT/airflow/stop.sh      (FC jobs on the pd hosts keep running; a restart re-attaches)
+  keep-alive (optional, cron on that host):  bash $ROOT/airflow/watchdog.sh install
+  your files: $CFG/local.env  $CFG/local.yaml  $CFG/home/ (airflow.cfg, task logs, password, watchdog log)
 
 Checking your setup now (expect WARNs for 'not running' / 'DAG not registered' until you start Airflow):
 EOF

@@ -10,13 +10,13 @@
 # A restart = stop.sh (writes the pdflow_shutdown flag, so step operators leave FC jobs running) then
 # start.sh inside tmux session "pdflow" (tmux attach -t pdflow to look at it). Orphaned task instances are
 # retried by the new scheduler within ~20 min and re-attach to their still-running FC jobs.
-# Log: airflow/watchdog.<host>.log. Why cron and not systemd --user: user units die at logout unless
+# Log: <instance>/watchdog.<host>.log (instance = AIRFLOW_HOME, default airflow/home). Why cron and not systemd --user: user units die at logout unless
 # `loginctl enable-linger` (root) is set; cron is already enabled for users on these hosts.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/env.sh"
 HOST="$(hostname -s)"
-LOG="$HERE/watchdog.$HOST.log"
+LOG="$AIRFLOW_HOME/watchdog.$HOST.log"        # in the instance dir: writable by its owner even on a shared checkout
 TAG="# pdflow-watchdog $HERE"
 OFF="$AIRFLOW_HOME/watchdog.off"
 STAMP="$AIRFLOW_HOME/watchdog.last_restart"
@@ -43,9 +43,9 @@ start_detached() {
   tmux kill-session -t pdflow 2>/dev/null || true
   rm -f "$AIRFLOW_HOME/pdflow_shutdown"
   if command -v tmux >/dev/null; then
-    tmux new -d -s pdflow "bash -c 'bash $HERE/start.sh 2>&1 | tee -a $HERE/standalone.$HOST.log'"
+    tmux new -d -s pdflow "bash -c 'bash $HERE/start.sh 2>&1 | tee -a $AIRFLOW_HOME/standalone.$HOST.log'"
   else
-    setsid nohup bash "$HERE/start.sh" >> "$HERE/standalone.$HOST.log" 2>&1 < /dev/null &
+    setsid nohup bash "$HERE/start.sh" >> "$AIRFLOW_HOME/standalone.$HOST.log" 2>&1 < /dev/null &
   fi
   date +%s > "$STAMP"
 }

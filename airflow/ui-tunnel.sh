@@ -18,7 +18,7 @@ AH="${PDFLOW_AIRFLOW_HOST:-mipscs85}"
 PORT="$AIRFLOW_PORT"
 FWD="$PORT:127.0.0.1:$PORT"
 TAG="# pdflow-ui-tunnel $HERE"
-LOG="$HERE/ui-tunnel.$(hostname -s).log"
+LOG="$AIRFLOW_HOME/ui-tunnel.$(hostname -s).log"   # instance dir: writable by its owner
 
 running() { pgrep -u "$(id -un)" -f "ssh .*-L $FWD .*$AH" >/dev/null 2>&1; }
 case "${1:-status}" in
