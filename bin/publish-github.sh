@@ -66,7 +66,7 @@ else
   git commit -q -m "sync from working copy $(git -C "$SRC" rev-parse --short HEAD): $(git -C "$SRC" log -1 --format=%s | cut -c1-70)"
   echo "-- committed $(git rev-parse --short HEAD) in $DEST ($(git ls-files | wc -l) files)"
 fi
-echo "-- leftovers check:"; grep -rlE 'HANDOFF\.md|PLAN\.md|PROJECT_STATEMENT\.md|FLOW\.md|TEAM_ROLLOUT\.md|SHARING\.md' --include='*.md' --include='*.sh' --include='*.example' . 2>/dev/null | sed 's/^/   still mentions a local-only doc: /' || echo "   none"
+echo "-- leftovers check:"; grep -rlE 'HANDOFF\.md|PLAN\.md|PROJECT_STATEMENT\.md|FLOW\.md|TEAM_ROLLOUT\.md|SHARING\.md' --include='*.md' --include='*.sh' --include='*.example' --exclude=publish-github.sh . 2>/dev/null | sed 's/^/   still mentions a local-only doc: /' || echo "   none"
 if [ "$PUSH" = 1 ]; then
   git push -u github main
   echo "-- pushed to $REMOTE_URL"
