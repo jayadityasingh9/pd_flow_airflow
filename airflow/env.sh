@@ -12,7 +12,7 @@
 # Run directories are NOT here -- they live under runs_root in config/fixed.yaml
 # (/home/<user>.scratch/raven_local_ws/<run_tag>/ by default).
 #
-# Two ways to use one checkout (see SHARING.md / TEAM_ROLLOUT.md):
+# Two ways to use one checkout (see README.md):
 #   * your own clone: overrides in airflow/local.env + config/local.yaml (git-ignored), instance = airflow/home
 #   * a SHARED read-only install: overrides in ~/.pdflow/local.env + ~/.pdflow/local.yaml, instance =
 #     ~/.pdflow/home (PDFLOW_INSTANCE) -- created by bin/pdflow-user-setup.sh. Several people can then run
@@ -109,7 +109,7 @@ export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="sqlite:///${AF_DB_DIR}/airflow.db"
 # Each user gets their own ports (several people share the login hosts): UI = 20000 + uid % 20000,
 # worker / triggerer log servers = UI+1 / UI+2. Override in local.env (jsingh9's copy keeps 8081).
 # BASE_URL matters: Airflow 3 tasks reach the execution API through it.
-# HOST / BASE_URL can be overridden too (SHARING.md way B: 0.0.0.0 + the host's name) -- the default
+# HOST / BASE_URL can be overridden too (demo-only intranet UI: 0.0.0.0 + the host's name) -- the default
 # binds to loopback only, so the UI is reachable just through an ssh tunnel.
 _PDFLOW_BASE_PORT=$(( 20000 + $(id -u) % 20000 ))
 export AIRFLOW_PORT="${AIRFLOW_PORT:-$_PDFLOW_BASE_PORT}"

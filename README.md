@@ -1,292 +1,178 @@
-# Raven PD flow — Airflow (RTL build → Fusion Compiler route_opt)
+# raven_pd_flow — how to use it, step by step
 
-> One Airflow run takes a Raven module from RTL to **route_opt**. You pick the pd host, the
-> module and a few knobs in the trigger form; everything else is predefined. The flow pauses
-> twice (after **compile** and after **clock_opt_opto**) so you can review QoR and
-> **Approve / Reject** before it goes on.
-> The Perforce workspace is **never modified**: every run works on its own fresh copy.
->
-> **New here? Start with the [User Guide](docs/user-guide/README.md)**: prerequisites, passwordless ssh, setup,
-> opening the UI from your PC, running a flow, troubleshooting, FAQ. `SHARING.md` compares the ways to share.
+The tool takes one Raven module from RTL build through Synopsys Fusion Compiler to `route_opt`. You fill a web
+form; it copies the RM kit into your scratch, patches it, runs every step on a pd host under your account, grades
+each step from the logs and reports, pauses twice for your review, and leaves a `summary.md` per run.
 
-**Contents**
-1. [Start / stop Airflow](#1-start--stop-airflow)
-2. [Run the flow (the trigger form)](#2-run-the-flow-the-trigger-form)
-3. [Review gates](#3-review-gates)
-4. [What a run leaves on disk](#4-what-a-run-leaves-on-disk)
-5. [Resume, retry, kill](#5-resume-retry-kill)
-6. [Fixed (predefined) settings](#6-fixed-predefined-settings)
-7. [How a step is judged PASS / FAIL](#7-how-a-step-is-judged-pass--fail)
-8. [Files in this project](#8-files-in-this-project)
-9. [Verify it yourself](#9-verify-it-yourself)
-10. [Known limits](#10-known-limits)
+You run **your own Airflow** under **your own account**. Jobs use your ssh keys, your FC licenses, your scratch.
+
+All Linux commands below are csh, typed on **mipscs85**. `P` is the shared install:
+
+```csh
+set P = /home/jsingh9.scratch/mywork/pd_flow_airflow
+```
 
 ---
 
-## 1. Start / stop Airflow
-
-Airflow runs on the host where you start it (since 2026-10-15: **mipscs85**, 64 cores / 1 TB RAM, python3.11; it ran on
-mipspd86 on 10-14, and before that on mipscs82/83, whose SQLite scheduler died twice under login-server load -- the
-`watchdog.sh` cron now restarts it within 5 min if that happens again). Its metadata DB is **node-local**
-(`/var/tmp/<user>_pdflow_airflow_db`), so always start it on the same host; on a new host `start.sh` creates an
-empty DB (runs on disk are unaffected and can be resumed from their `run.json`).
+## Step 1 — Check your account
 
 ```csh
-# start (inside tmux so it survives logout; FC runs take hours)
-ssh mipscs85
-tmux new -s pdflow 'bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/start.sh'
-#   detach: Ctrl-b d      re-attach: tmux attach -t pdflow
-
-# on your laptop: tunnel, then open http://127.0.0.1:<port>  (owner: 8081; others: 20000 + uid % 20000, printed by start.sh)
-ssh -L 8081:127.0.0.1:8081 jsingh9@mipscs85.mipstec.com
-#   user: admin   password: cat <instance>/simple_auth_manager_passwords.json.generated   (instance = airflow/home, or $PDFLOW_INSTANCE)
-
-# status / stop
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/status.sh
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/stop.sh
+ls -d /home/$USER.scratch
+df -h /home/$USER.scratch
 ```
 
-Stopping Airflow does **not** stop FC jobs: they run detached on the pd host. After `start.sh`,
-**Clear** the running task in the UI and it re-attaches to the job (or picks up its result if it
-finished meanwhile).
+**What happens:** nothing yet; you confirm you have a scratch area with free space (10 GB for debug/trf, 50 GB for
+cic, 150 GB for corvi). Runs will be created under `/home/$USER.scratch/raven_local_ws/`.
 
-**Keep it running without you** (optional, per host, no root): `bash airflow/watchdog.sh install` on the
-Airflow host adds a cron check every 5 min (+ after reboot) that restarts Airflow when its health endpoint
-is down or any component is unhealthy (the SQLite "database is locked" scheduler death, a host reboot).
-`watchdog.sh status|off|on|remove`; its log is `<instance>/watchdog.<host>.log`.
-
-**Reach the UI from Windows: one direct tunnel to the Airflow host, no gateway.** PowerShell:
-`ssh -N -L 8081:127.0.0.1:8081 jsingh9@mipscs85.mipstec.com` (leave the window open), then
-`http://localhost:8081`. PuTTY: in the mipscs85 session, Connection → SSH → Tunnels, source `8081`,
-destination `127.0.0.1:8081`. Only if your PC cannot ssh to the Airflow host directly, `airflow/ui-tunnel.sh`
-can relay through a Linux gateway instead.
-
-**Footprint on the shared host** (`env.sh`, `start.sh`): 6 executor workers, 1 API worker, 1 DAG parser every
-2 min, 5 s scheduler idle sleep, and everything under `nice 10` / low I/O priority, so interactive users and
-EDA jobs on the same machine always come first. Measured idle on mipscs85: 18 processes, ~2.0 GB RSS, ~2 % of one core.
-
-Ports: the owner's copy keeps **8081** (`airflow/local.env`; the older freq_hist Airflow uses 8080); every other user
-gets `20000 + uid % 20000` (+1/+2 for the log servers). One-time install was `bash airflow/setup.sh`; a user of a
-shared install runs `bash bin/pdflow-user-setup.sh` instead (see `SHARING.md`).
-
-## 2. Run the flow (the trigger form)
-
-UI → DAG **raven_pd_flow** → **Trigger** (form). Or from the command line:
+## Step 2 — Passwordless ssh to the pd hosts
 
 ```csh
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/airflow/af.sh dags trigger raven_pd_flow \
-     --conf '{"fc_host":"mipspd81","module":"debug_module"}'
+ls ~/.ssh/id_ed25519.pub                       # if missing:  ssh-keygen -t ed25519   (Enter at every prompt, no passphrase)
+mkdir -p ~/.ssh; chmod 700 ~/.ssh
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys; chmod go-w ~
+foreach h (mipspd81 mipspd82 mipspd83 mipspd84 mipspd85)
+  ssh -o StrictHostKeyChecking=accept-new $h hostname
+end
 ```
 
-| Field | Default | What it does |
-|---|---|---|
-| **pd host** (`fc_host`) | *required* | mipspd81 … mipspd85. The build and every FC step run there (over ssh). precheck prints the live load / free RAM of all 5 hosts. pd81/82 = 128 cores, pd83-85 = 32. |
-| **Module** | *required* | corvi_module / cic_module / debug_module / trf_module → sets DESIGN_NAME, top RTL, default config and clock. On a **resume** pick the run's own module (a different one is refused). |
-| **RTL source** | Run build.py | Where FC gets its RTL: **Run build.py** (fresh filelists, default) · **Reuse an existing build** (skips build.py; takes another run's `synthesis_*.f`; the build's `-tech` must equal the chosen Technology node, otherwise refused) · **Custom filelist** (an RM-style Tcl file you provide). `bash bin/pdflow.sh builds` lists reusable builds. |
-| **Build path** | blank | Needed for the last two: a run folder such as `/home/jsingh9.scratch/raven_local_ws/corvi_2Core_4VC_32K_20261006-232004` (or its `vbuild/<config>` / `py.Work` dir), or the absolute path of your `.tcl` filelist. |
-| **Technology node** | 9T eMRAM stack | The RM tech dir (`<module>/block_files/<TECH_DIR>`) **and** the matching `build.py -tech`. Every module has `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack`; corvi_module also offers `GF_22FDXP_6P75T_116A`, `GF_22FDXP_6P75T`, `GF_22FDXP_9T_AutoPro150`, `SYN_5FF_6TMVT`. A tech dir the module lacks is refused. Fixed for the life of a run (a different node = a new run). |
-| **Build config** | module default | `-c`/`SYN_CONFIG`, e.g. `2Core_4VC_32K`, `2Core_4VC_32K_rvn_drive` (the 41 dirs in `$MIPS_HOME/raven/src/config`). |
-| **Clock period (ns)** | module default | Patches `set Clk_period` in the run copy's `design_setup.tcl` (drives every functional clock). Defaults: corvi 1.25, cic 1.25, debug 2, trf 1.25. |
-| **Max cores** | 16 | `set_host_options -max_cores` (patched in `fc_setup.tcl` — the one that takes effect — and `design_setup.tcl`). ≤ cores of the host. |
-| **Max low-VT cells (%)** | 10 | Upper limit on low-VT (ULVT) cell usage: `set_multi_vth_constraint -low_vt_percentage` in the run copy's `settings.non_persistent.tcl` (RM default 10). Lower = less leakage, higher = more timing headroom. Takes effect from compile. |
-| **Continue past DFT Rule S19** | off | The RM's `compile.tcl` **exits** when DFT DRC reports Rule S19 (nonscan cell disturb) — debug_module (5×) and trf_module (1×) both hit it. **On** = the run copy only warns, compile continues, and the S19 count shows in the compile gate. **Off** = RM behaviour (compile fails). |
-| **Start from** | build | `build` = new run. Any later step = **resume** an existing run (needs Run tag). |
-| **Stop after** | route_opt | Last step to run. |
-| **Run tag** | automatic | `<module>_<config>_<date-time>`. Needed to resume. |
-| **Review QoR after compile / after clock_opt_opto** | on / on | The two gates. |
-| **Dry run** | off | New runs only: workspace + patches + scripts + prechecks, no tools. |
+**What happens:** your public key is added to your own `authorized_keys` (one file, shared by every host through
+NFS), and each pd host's identity is accepted once. From now on `ssh mipspd8x` needs no password. Airflow needs
+this because it starts every build and FC step with `ssh -o BatchMode=yes`, where a prompt would be a failure.
+The loop must print five host names and nothing else.
 
-Steps in order: `build → init_design → compile → clock_opt_cts → clock_opt_opto → route_auto → route_opt`
-(`place_opt` is part of compile in this RM's unified flow).
-
-## 3. Review gates
-
-When the run reaches a gate the task turns **awaiting input**. Open it (Graph → `gate_compile` or
-`gate_clock_opt` → *Required Actions*). You see: requested vs. confirmed clock and cores, setup/hold
-WNS/TNS/NVP, utilization, area, the 5 worst path groups, Error IDs seen in the log, report paths.
-
-**From the terminal instead** (same effect as the UI; recorded as user `admin` with your comment):
+## Step 3 — Create your settings
 
 ```csh
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh gates                  # what is waiting
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh review  <run_tag>      # QoR table of the gate
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh approve <run_tag> -m "WNS ok for now"
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh reject  <run_tag> -m "fix floorplan first"
+bash $P/bin/pdflow-user-setup.sh
 ```
 
-* **Approve** → the next step starts.
-* **Reject** → the run stops and ends **failed**. Continue later with the same Run tag and
-  `start_from` = the next step (the already-reviewed gate is skipped).
-* No answer in 72 h → the gate fails the run.
+**What happens:** `~/.pdflow/local.env` is written with your UI port (`20000 + uid % 20000`), the two log-server
+ports, your instance directory `~/.pdflow/home`, the shared Python environment and a node-local database path.
+`~/.pdflow/local.yaml` is written with commented examples (`mips_home`, `runs_root`, `fc_hosts`). Then `doctor`
+runs and prints one line per check. Fix every **FAIL** (ssh is the usual one, step 2). "Airflow not running" as
+**WARN** is expected at this point. Edit `~/.pdflow/local.yaml` only if you want your own Perforce workspace.
 
-Gates are skipped automatically when switched off, in a dry run, when the gated step was reused
-(resume) or when nothing runs after it.
-
-## 4. What a run leaves on disk
-
-```
-/home/jsingh9.scratch/raven_local_ws/
-  runs_index.tsv                       one line per finished Airflow run
-  <run_tag>/
-    summary.md                         PASS/FAIL, per-step table, gates, paths   <- start here
-    run.json                           every input + fixed-config snapshot + per-step status/facts
-    patches/<module>.diff              exactly what was changed in the copy
-    scripts/NN_<step>.csh              the step scripts -- re-runnable by hand on a pd host
-    scripts/env_fc.csh env_build.csh   tool environments
-    status/<step>.{pid,start,rc,end}   written by the job itself
-    logs/build.console.log  <step>.wrapper.log
-    qor/<step>.json                    parsed QoR
-    rm_fc_cad/                         the fresh copy of $MIPS_HOME/rm_fc_cad
-      vbuild/<config>/build.log        RTL build
-      <module>/rm_fc/logs/<step>.log   FC logs
-      <module>/rm_fc/rpts/<step>/      FC reports
-      <module>/rm_fc/tmp/              markers + <DESIGN>.nlib
-```
-
-Command line helpers:
+## Step 4 — Start your Airflow
 
 ```csh
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh list            # runs + live jobs
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh status <run_tag>
-bash /home/jsingh9.scratch/mywork/pd_flow_airflow/bin/pdflow.sh qor <run_tag>
+tmux new -s pdflow "bash $P/airflow/start.sh"
 ```
 
-## 5. Resume, retry, kill
+**What happens:** inside a tmux session (so it survives your logout) `start.sh` creates your metadata database on
+this host's local disk on first start, creates the two pools (`pd_fc`, `pd_build`), unpauses the DAG, locks your
+generated admin password file to mode 600 and starts Airflow at low priority. A banner shows your **port**, the
+tunnel command and the password file. Allow two minutes. Detach with **Ctrl-b** then **d**; return with
+`tmux attach -t pdflow`. Confirm with `bash $P/bin/pdflow.sh doctor` (every line PASS).
 
-| Situation | What to do |
+## Step 5 — Open the tunnel from your PC
+
+On **Windows**, open PowerShell (prompt `PS C:\...>`, not a Linux window) and type, with your port:
+
+```powershell
+ssh -L <port>:127.0.0.1:<port> <you>@mipscs85.mipstec.com
+```
+
+**What happens:** you log in to mipscs85 as usual, and this connection also forwards `localhost:<port>` on your PC
+to the Airflow UI on mipscs85, which listens only on its own loopback. Keep this window open while you work; it is
+the tunnel. Enter your password unless you did the Windows key setup in page 2. (PuTTY: Connection → SSH →
+Tunnels, source `<port>`, destination `127.0.0.1:<port>`.)
+
+## Step 6 — Log in
+
+Browser on your PC: `http://localhost:<port>`. User `admin`. Password:
+
+```csh
+cat ~/.pdflow/home/simple_auth_manager_passwords.json.generated
+```
+
+**What happens:** Airflow generated this password for your instance on first start; nobody else has it. You see
+one DAG, `raven_pd_flow`.
+
+## Step 7 — Trigger a run
+
+**raven_pd_flow → Trigger** (top right). Required: **pd host** and **Module**. Usual choices: host `mipspd84`
+(least loaded, most free RAM), clock and build config left blank (module defaults), **Continue past DFT Rule S19**
+on, both gates on. Leave **Start from** = `build`, **Stop after** = `route_opt`.
+
+**What happens, box by box:**
+
+| Box | What it does |
 |---|---|
-| A step failed; you fixed something **in the run copy** | UI: that task → **Clear** (+ downstream). Same run, same tag. |
-| Continue a stopped / rejected / finished run | New trigger: same **Run tag**, same **Module**, **Start from** = next step (build config and clock are taken from the run when left blank). |
-| Change the clock of an existing run | Resume with **Start from = init_design** (the SDC is read there). |
-| Airflow died while FC was running | `start.sh`, then **Clear** the task → it re-attaches. |
-| Stop a running step | UI: task → **Mark failed** (kills the whole remote job: TERM, KILL after 60 s), or `bash .../bin/pdflow.sh kill <run_tag>`. The job is killed **only** when the task's state in the Airflow DB says a person stopped it (failed/success/…) and `stop.sh` did not just run; any Airflow-internal stop (heartbeat loss, restart, shutdown) leaves the FC job running for re-attach — then use `pdflow.sh kill` if you really want it gone. |
-| Airflow moved to another host while a step ran | wait for the step to finish, then new trigger: same Run tag, **Start from = that step** → the finished, never-graded result is **adopted** and graded (no re-run). If the step was already graded (status ok/warn), Start from = the *next* step; precheck warns if you would re-run a graded step. |
-| Run a step by hand, outside Airflow | `ssh mipspd8x` then `csh -f <run>/scripts/30_compile.csh` |
+| `resolve_inputs` | turns the form into a run: run tag `<module>_<config>_<date-time>`, paths, defaults |
+| `precheck` | prints load and free RAM of all five pd hosts; refuses a host short of RAM or a full scratch; checks the FC module on the chosen host |
+| `prepare_workspace` | copies `rm_fc_cad` from the Perforce workspace into `/home/$USER.scratch/raven_local_ws/<run_tag>/`, patches clock, cores, low-VT and S19 in the copy, writes the step scripts |
+| `build_rtl` | runs `build.py` on the pd host; produces the synthesis filelists |
+| `fc_init_design` | FC reads the RTL and constraints into the design library |
+| `fc_compile` | synthesis and placement (hours; corvi took 41 h) |
+| `gate_compile` | **waits for you** (step 8) |
+| `fc_clock_opt_cts`, `fc_clock_opt_opto` | clock tree synthesis and optimisation |
+| `gate_clock_opt` | **waits for you** |
+| `fc_route_auto`, `fc_route_opt` | routing and post-route optimisation |
+| `finalize` | grades the run PASS/FAIL, writes `summary.md`, releases the run |
 
-## 6. Fixed (predefined) settings
+Every tool step is launched detached on the pd host over ssh and only watched from Airflow, so an Airflow restart
+never kills a job. A step is graded from its log and reports, not from the exit code: markers, "Thank you for using
+Fusion Compiler", fatal patterns, echoed clock and cores, reports present, open nets after `route_opt`. Other
+`Error:` IDs become warnings. A step is stopped only when hung (no log output for 6 h) or past a backstop.
 
-All in `config/fixed.yaml` (a snapshot is stored in every `run.json`):
+## Step 8 — Answer the gates
 
-| Setting | Value |
-|---|---|
-| Source (read only) | `/home/jsingh9/Perforce/jsingh9_raven_ws2` ( `$MIPS_HOME` ) → `rm_fc_cad` copied per run |
-| Runs | `/home/jsingh9.scratch/raven_local_ws/<run_tag>/` |
-| FC | `module load fc/2022.12-SP6`; license queuing on, wait ≤ 12 h (`SNPSLMD_QUEUE`, `SNPS_MAX_WAITTIME/QUEUETIME=43200`) |
-| Build env | `source $MIPS_HOME/raven/source_env.csh $MIPS_HOME/raven` (+ `IMGSITE=SC`) |
-| Build | `build.py ravenRTL -t <top> --configName <cfg> --workDirectory <cfg> -bt Synthesis -tech gf_22fdxp_9t_autopro150_9m_emram_stack -f <gf22 lvt std cells .v> -f <std_primitives.v>` |
-| TECH_DIR | from the **Technology node** field (default `GF_22FDXP_9T_AutoPro150_9M_eMRAM_stack`); the pairing tech dir ↔ `build.py -tech` lives in `config/fixed.yaml` → `tech_nodes` |
-| FC call | `fc_shell -f ../../scripts_block/rm_fc_scripts/<step>.tcl` in `<module>/rm_fc/tmp` (not `make`: its `\| tee` hides failures and it silently re-runs prerequisites) |
-| Tool environment | clean (`env -i`), started with `setsid` on the pd host → no DISPLAY, no stray variables |
-| Stop rules | a step is stopped only when **hung** (`stall_timeout_h: 6` with no log growth) or past the backstop `max_runtime_h` (S 48 h / M 120 h / L 240 h). Counted from when fc_shell becomes **active** — time spent queueing for a license (up to 12 h) is not counted. corvi compile measured 41 h. |
+When a gate box turns **awaiting input**: click it → **Required Actions** (or **Browse → Required Actions**).
 
-| Module | DESIGN_NAME | Default config | Default clock | Floorplan |
-|---|---|---|---|---|
-| corvi_module | corvi_module | 2Core_4VC_32K | 1.25 ns | corvi_module.def |
-| cic_module | cm3_cic | 2Core_4VC_32K_rvn_drive | 1.25 ns | cm3_cic.def |
-| debug_module | rvn_dbu_top_wrapper | 2Core_4VC_32K_rvn_drive | 2 ns | rvn_dbu_top_wrapper.def |
-| trf_module | rvn_mips_l2trf_top | 2Core_4VC_32K_rvn_drive | 1.25 ns | automatic |
-
-## 6a. Custom filelist format
-
-RM-style Tcl, absolute paths, packages listed first inside `RTL_SOURCE_FILES` (the RM read script's
-override branch analyzes only that list):
-
-```tcl
-set INC_DIRS "/home/me/rtl/include /home/me/rtl/cfg"
-set RTL_SOURCE_FILES "\
-  /home/me/rtl/pkg/my_pkg.sv \
-  /home/me/rtl/top.sv \
-  /home/me/rtl/sub.sv \
-"
-```
-
-precheck validates it (every path must exist). The flow copies it to `<run>/user_filelist.tcl` and
-points the run copy's `<DESIGN>.FC.read_design.tcl` at it; Perforce is untouched. The `build_rtl`
-box then shows **provided** instead of running build.py.
-
-## 6b. Where the build data comes from
-
-1. **build_rtl** runs `build.py` from `<run>/rm_fc_cad/vbuild/` with `--workDirectory <build_config>` and the
-   `-tech` of the chosen technology node. It writes `<run>/rm_fc_cad/vbuild/<build_config>/vbuild/py.Work/
-   synthesis_rtl.f`, `synthesis_inc.f`, `synthesis_pkg.f` (Tcl lists of RTL files, include dirs, packages) plus
-   `build.log`, `build.info` and the generated headers under `vbuild/include/`.
-2. **fc_init_design** runs in `<run>/rm_fc_cad/<module>/rm_fc/tmp/`. The module's read script
-   (`block_files/common/<DESIGN>.FC.read_design.tcl`) first looks for an override
-   `$MIPS_HOME/../filelists/<module>_syn_rtl.tcl` (precheck warns if present), otherwise it sources
-   `../../../vbuild/$SYN_CONFIG/vbuild/py.Work/synthesis_{inc,rtl,pkg}.f` — i.e. **this run's build output**.
-   `SYN_CONFIG` is set by the flow to the build config, which is why the two must match (resolve_inputs enforces it).
-3. The RTL is read from the Perforce workspace paths listed in those filelists (`$MIPS_HOME/raven/src/...`), while
-   generated headers come from the run's own `vbuild/include/` copy (that is also where `rtl_fixes` are applied).
-
-Each step's log starts with a `pdflow: cores:` line (requested `max_cores`, host core count, tech, low-VT %), and the
-task log ends with `cores: requested …, FC applied set_host_options -max_cores N, timer threads N` read back from
-the FC log.
-
-## 7. How a step is judged PASS / FAIL
-
-Exit codes alone are not trusted (the RM scripts keep going after Tcl errors, and `build.py`
-exits 0 in some failure cases). A step **FAILS** if any of:
-
-* **Build**: exit ≠ 0 · `build.log` does not end with `Build Completed` · `Error-[` / `- ERROR -` /
-  Traceback in the log · `sim.Linux/sim` missing · `synthesis_{rtl,inc,pkg}.f` missing/empty/stale or
-  not listing the top file · peakrdl non-zero return code.
-* **FC**: exit ≠ 0 · the step's marker (written by the last line of `<step>.tcl`) missing or stale →
-  the script stopped early (e.g. *No clocks created*, *Rule S19*) · no *Thank you for using Fusion
-  Compiler* (crash/kill) · a fatal pattern (ELAB/VER/LNK/NDM errors, license failure, segfault …) ·
-  FC echoed a different `Clk_period` / `-max_cores` than requested · the report_qor clock period for
-  group `Clk` ≠ requested · expected reports missing.
-
-Error IDs are counted from FC's own `print_message_info -ids * -summary` table (so errors inside
-redirected commands count too); ELAB/VER/LNK/NDM errors fail the step. route_opt fails on any
-**open net**; DRC counts are warnings (limit configurable: `max_route_opt_drcs`). The `Clk` path
-group must exist in report_qor with the requested period.
-
-Other `Error:` IDs and `RM-error` lines are **warnings**, listed in the gate and in `summary.md`.
-With *Continue past DFT Rule S19* on, the S19 stop becomes a warning too (`DFT Rule S19 violated (N×) -- continued …`, details in `rpts/compile/dft_drc_full.rpt`).
-
-## 8. Files in this project
-
-```
-<checkout>/                         (owner: /home/jsingh9.scratch/mywork/pd_flow_airflow)
-  README.md  FLOW.md  SHARING.md  TEAM_ROLLOUT.md  HANDOFF.md  PLAN.md  PROJECT_STATEMENT.md
-  docs/user-guide/                  step-by-step guide for users (8 pages: prerequisites ... maintainers)
-  config/fixed.yaml                 predefined settings      config/local.yaml.example  per-user overrides
-  airflow/dags/raven_pd_flow_dag.py the DAG (form + task wiring)
-  airflow/{setup,start,stop,status,af,env}.sh   airflow/local.env.example
-  airflow/home/                     default instance (AIRFLOW_HOME): airflow.cfg, task logs, admin password
-  pdflow/                           the flow logic (plain Python, unit-tested)
-    config.py    fixed.yaml + local.yaml       context.py   form -> resolved run
-    precheck.py  read-only checks              workspace.py run dir, run.json, lock
-    patch.py     design_setup/fc_setup edits   buildsrc.py  RTL source: existing build / custom filelist
-    scripts.py   generated csh scripts         remote.py    ssh to pd hosts
-    runner.py    launch / re-attach / adopt    checks.py    PASS/FAIL rules
-    qor.py       report parsing + gate text    summary.py   summary.md, runs_index
-    doctor.py    `doctor` + `report`           airflow_ops.py  the step + gate operators
-    cli.py       bin/pdflow.sh
-  bin/pdflow.sh                     command line      bin/pdflow-user-setup.sh   per-user setup on a shared install
-  tests/test_pdflow.py  tests/fixtures/
-```
-
-## 9. Verify it yourself
+**What happens:** you see requested vs confirmed clock and cores, setup/hold WNS/TNS/NVP, utilisation, area, the
+worst path groups, Error IDs from the log and report paths. **Approve** lets the next step start. **Reject** ends
+the run as failed; you can continue it later (step 10). No answer within 72 h fails the run. From a terminal:
 
 ```csh
-cd <checkout>
-bash -c 'source airflow/env.sh; $VENV/bin/python -m pytest -q -p no:cacheprovider tests'
-#   expect: all passed  (69 as of 2026-10-14; the suite ignores your local.yaml and skips Perforce-dependent tests if unreadable)
-bash airflow/af.sh dags list-import-errors
-#   expect: No data found
-bash airflow/af.sh dags test raven_pd_flow --conf '{"fc_host":"mipspd81","module":"debug_module","dry_run":true,"clock_period_ns":1.5,"max_cores":8}'
-#   expect: "run PASSED"; then:
-diff -rq $MIPS_HOME/rm_fc_cad <runs_root>/dry-debug_<...>/rm_fc_cad
-#   expect: only debug_module design_setup.tcl and fc_setup.tcl differ
+bash $P/bin/pdflow.sh gates
+bash $P/bin/pdflow.sh review  <run_tag>
+bash $P/bin/pdflow.sh approve <run_tag> -m "comment"
 ```
 
-## 10. Known limits
+## Step 9 — Watch and read the result
 
-* The metadata DB is tied to the host running `start.sh` (SQLite must not live on NFS).
-* One module per run (trigger several runs to do several modules; up to 2 FC steps run at once —
-  pool `pd_fc`).
-* A non-default build config still uses the module's fixed DEF/SDC (precheck warns).
-* Scope ends at route_opt (no chip_finish / write_data / StarRC / PrimeTime).
-* `max_runtime_h` (S 48 / M 120 / L 240) and `stall_timeout_h` (6) in `config/fixed.yaml` are generous backstops; tune
-  them from real runtimes (corvi compile: 41 h).
+```csh
+bash $P/bin/pdflow.sh list --live                # your runs and live jobs
+bash $P/bin/pdflow.sh status <run_tag>           # per-step status, host, hours
+bash $P/bin/pdflow.sh qor <run_tag>              # WNS / TNS / hold / utilisation per step
+tail -f /home/$USER.scratch/raven_local_ws/<run_tag>/rm_fc_cad/<module>/rm_fc/logs/<step>.log
+```
+
+**What happens:** in the UI a running step logs a heartbeat every 5 minutes plus every error, license and S19 line
+from the FC log. At the end, `summary.md` in the run directory has the verdict, the per-step table, gate decisions
+and all paths; `run.json` holds every input and fact; FC logs are in `rm_fc_cad/<module>/rm_fc/logs/`, reports in
+`rm_fc_cad/<module>/rm_fc/rpts/<step>/`.
+
+## Step 10 — Continue, redo or stop a run
+
+| You want to | Do |
+|---|---|
+| continue after a reject, a stop, or a failure you fixed in the run copy | Trigger again: same **Run tag**, same **Module**, **Start from** = the step to run next; S19 on again if needed. Earlier steps are reused, not re-run. |
+| redo one failed step without a new trigger | click its box → **Clear task** |
+| change the clock | Trigger with Start from = `init_design` and the new clock |
+| stop a running step | box → **Mark as failed** (kills the FC job on the pd host) or `bash $P/bin/pdflow.sh kill <run_tag>` |
+| run a step by hand | `ssh mipspd84` then `csh -f /home/$USER.scratch/raven_local_ws/<run_tag>/scripts/30_compile.csh` |
+
+**What happens:** on a resume, `precheck` verifies the earlier steps' results in the run directory and `prepare_workspace`
+re-applies the patches; the gated steps that were not re-run are auto-approved. If Airflow was down while a job
+finished, resuming **at** that step adopts and grades the finished result instead of re-running it.
+
+## Step 11 — Stop, restart, keep alive
+
+```csh
+bash $P/airflow/stop.sh                                   # your instance only; FC jobs keep running
+tmux new -s pdflow "bash $P/airflow/start.sh"              # start again; running tasks re-attach within ~20 min
+bash $P/airflow/watchdog.sh install                        # optional: cron restarts your Airflow if it dies or the host reboots
+```
+
+**What happens:** `stop.sh` stops only the processes of your instance on this host. After a restart, tasks that
+were watching a job are retried and re-attach to it, or adopt its finished result. The watchdog adds two lines to
+your crontab (every 5 min, and after reboot); `watchdog.sh off` before planned maintenance, `on` after.
+
+---
+
+Details per topic: [prerequisites](docs/user-guide/01-prerequisites.md) · [passwordless ssh, incl. Windows](docs/user-guide/02-passwordless-ssh.md) ·
+[setup, own clone](docs/user-guide/03-setup-and-start.md) · [UI access, PuTTY, VNC, error table](docs/user-guide/04-access-the-ui.md) ·
+[every form field, resume rules](docs/user-guide/05-run-a-flow.md) · [troubleshooting](docs/user-guide/06-troubleshooting.md) · [FAQ](docs/user-guide/07-faq.md) ·
+[maintainers](docs/user-guide/08-maintainers.md). 

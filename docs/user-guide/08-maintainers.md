@@ -14,7 +14,7 @@ Every instance started from the shared checkout (way A′) sees the new DAG/pdfl
 `airflow/env.sh` or `start.sh` need each instance restarted. Clone users (`way A`) run `git pull`.
 
 Before pushing anywhere **outside the MIPS network** (public GitHub etc.): the repo contains internal host names, IPs,
-NFS paths, library paths and the structure of a proprietary flow. `SHARING.md` way E says no; an internal GitHub
+NFS paths, library paths and the structure of a proprietary flow. keep it private on the MIPS GitHub; an internal GitHub
 Enterprise is fine.
 
 ## The owner's own instance
