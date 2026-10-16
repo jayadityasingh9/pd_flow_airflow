@@ -47,9 +47,10 @@ the compile gate exists for. The Approve/Reject decision is yours; both ways to 
 
 ### A.3 Airflow instances
 
-| Host | State at 23:45 PDT 10-14 | To do |
+| Host | State at 2026-10-16 | To do |
 |---|---|---|
-| **mipspd86** (**the Airflow host since 10-14 23:22**) | python3.11 3.11.13, tmux, Rocky 8.10, 64 cores, 995 GB RAM, `/var/tmp` 55 GB free, load ~25, 25 users, NTP-synced PDT; all NFS mounts present; ssh to mipspd81–85 works; `doctor` 17/17 PASS; DAG registered + unpaused | `tmux attach -t pdflow` there; tunnel `ssh -L 8081:127.0.0.1:8081 mipspd86`; log `airflow/standalone.mipspd86.log` |
+| **mipscs85** (**the Airflow host since 10-15 02:45**) | python3.11 3.11.13, tmux, Rocky 8.10, 64 cores, 1006 GB RAM, `/var/tmp` 7 GB free (90 % used), NTP-synced PDT; all NFS mounts present; ssh to mipspd81–86 works; `doctor` 21/21 PASS; DAG registered + unpaused; runs at nice 10 (18 processes, ~2 GB RSS) | `tmux attach -t pdflow` there; tunnel `ssh -L 8081:127.0.0.1:8081 mipscs85`; log `airflow/standalone.mipscs85.log`; keep-alive `airflow/watchdog.sh install` (not yet installed) |
+| mipspd86 | hosted Airflow 10-14 23:22 → 10-15 02:44 (python3.11, 995 GB RAM); stopped cleanly, watchdog cron removed, DB had no runs | fallback host |
 | mipscs83 | **stopped 10-14 23:21** (its DB in `/var/tmp` keeps the old run history: run `manual__2026-10-12T09:46:25` is recorded there as `running`, fc_compile `success`) | nothing; the DB will age out of `/var/tmp` |
 | mipscs82 | **stopped 10-14 23:20** | nothing |
 | mipspd81 | python3.11 ✓, 128 cores, load ~38 | fallback Airflow host |

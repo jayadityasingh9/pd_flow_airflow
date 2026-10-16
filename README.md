@@ -6,7 +6,8 @@
 > **Approve / Reject** before it goes on.
 > The Perforce workspace is **never modified**: every run works on its own fresh copy.
 >
-> **Sharing with colleagues / testing:** see [`SHARING.md`](SHARING.md) (clone, `doctor`, error `report`).
+> **New here? Start with the [User Guide](docs/user-guide/README.md)**: prerequisites, passwordless ssh, setup,
+> opening the UI from your PC, running a flow, troubleshooting, FAQ. `SHARING.md` compares the ways to share.
 
 **Contents**
 1. [Start / stop Airflow](#1-start--stop-airflow)
@@ -248,6 +249,7 @@ With *Continue past DFT Rule S19* on, the S19 stop becomes a warning too (`DFT R
 ```
 <checkout>/                         (owner: /home/jsingh9.scratch/mywork/pd_flow_airflow)
   README.md  FLOW.md  SHARING.md  TEAM_ROLLOUT.md  HANDOFF.md  PLAN.md  PROJECT_STATEMENT.md
+  docs/user-guide/                  step-by-step guide for users (8 pages: prerequisites ... maintainers)
   config/fixed.yaml                 predefined settings      config/local.yaml.example  per-user overrides
   airflow/dags/raven_pd_flow_dag.py the DAG (form + task wiring)
   airflow/{setup,start,stop,status,af,env}.sh   airflow/local.env.example

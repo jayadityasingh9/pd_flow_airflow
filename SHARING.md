@@ -8,6 +8,8 @@
 > Code: `/home/jsingh9.scratch/mywork/pd_flow_airflow/` · clone from `/home/jsingh9.scratch/git/pd_flow_airflow.git`
 > · the owner's Airflow runs on **mipscs85** (since 2026-10-15).
 
+> Step-by-step instructions for a new user (ssh keys, setup, tunnel, first run) are in [`docs/user-guide/`](docs/user-guide/README.md).
+
 **Contents**
 1. [All the ways, compared](#1-all-the-ways-compared)
 2. [What every tester needs](#2-what-every-tester-needs)
